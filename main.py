@@ -19,14 +19,17 @@ async def lifespan(app: FastAPI):
     if settings.use_neon:
         from core import neon_db
         logger.info("Initializing Neon PostgreSQL database...")
+        migrated = False
         try:
-            neon_db.init_db()
+            migrated = neon_db.init_db()
         except Exception as e:
             logger.error(f"Neon init failed: {e}")
         try:
             count = neon_db.count_participants()
-            if count == 0:
+            if count == 0 or migrated:
                 neon_db.sync_from_gsheets()
+                if migrated:
+                    logger.info("Backfill after nama_lengkap_ayah migration complete.")
             else:
                 logger.info(f"Sync skipped, {count} participants already in Neon.")
         except Exception as e:
@@ -35,14 +38,17 @@ async def lifespan(app: FastAPI):
     else:
         from core import sqlite_db
         logger.info("Initializing SQLite database...")
+        migrated = False
         try:
-            sqlite_db.init_db()
+            migrated = sqlite_db.init_db()
         except Exception as e:
             logger.error(f"SQLite init failed: {e}")
         try:
             count = sqlite_db.count_participants()
-            if count == 0:
+            if count == 0 or migrated:
                 sqlite_db.sync_from_gsheets()
+                if migrated:
+                    logger.info("Backfill after nama_lengkap_ayah migration complete.")
             else:
                 logger.info(f"Sync skipped, {count} participants already in SQLite.")
         except Exception as e:

@@ -134,6 +134,20 @@ body {
     border-color: var(--ngg-black);
 }
 
+.btn-undo {
+    background-color: var(--ngg-white);
+    color: #b00020;
+    border: 1px solid #b00020;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.btn-undo:hover:not(:disabled) {
+    background-color: #b00020;
+    color: var(--ngg-white);
+    border-color: #b00020;
+}
+
 .btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
@@ -152,6 +166,9 @@ body {
     font-weight: 500;
     font-size: 0.85rem;
     border-color: var(--ngg-black);
+    position: sticky;
+    top: 0;
+    z-index: 1;
 }
 
 .table-custom tbody td {

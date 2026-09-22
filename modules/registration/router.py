@@ -17,9 +17,17 @@ def get_participant_endpoint(no_order: str):
 def check_in_endpoint(payload: CheckInRequest):
     return RegistrationService.checkParticipant(payload.no_order)
 
+@router.post("/check-in/undo")
+def undo_check_in_endpoint(payload: CheckInRequest):
+    return RegistrationService.undoCheckIn(payload.no_order)
+
 @router.post("/attendance")
 def attendance_endpoint(payload: AttendanceRequest):
     return RegistrationService.attendParticipant(payload.no_order)
+
+@router.post("/attendance/undo")
+def undo_attendance_endpoint(payload: AttendanceRequest):
+    return RegistrationService.undoAttendance(payload.no_order)
 
 @router.get("/participants")
 def get_all_participants_endpoint():

@@ -144,7 +144,9 @@ https://ngg-attendance.vercel.app/
 | `GET` | `/docs` | Swagger UI documentation (**local development saja**; tidak di-route di Vercel) |
 | `GET` | `/api/registration/participant/{no_order}` | Get participant by order number |
 | `POST` | `/api/registration/check-in` | Race pack pickup |
+| `POST` | `/api/registration/check-in/undo` | **Batalkan** race pack pickup (admin salah input) |
 | `POST` | `/api/registration/attendance` | Mark attendance |
+| `POST` | `/api/registration/attendance/undo` | **Batalkan** status hadir (admin salah input) |
 | `GET` | `/api/registration/participants` | Get all participants |
 | `GET` | `/api/registration/search?keyword=...` | Search participants |
 | `GET` | `/api/registration/stats` | Get statistics |
@@ -165,6 +167,15 @@ POST /api/registration/attendance
 {
   "no_order": "383"
 }
+```
+
+**Undo check-in / undo hadir** (body sama seperti di atas):
+```json
+POST /api/registration/check-in/undo
+{ "no_order": "383" }
+
+POST /api/registration/attendance/undo
+{ "no_order": "383" }
 ```
 
 ## Project Structure

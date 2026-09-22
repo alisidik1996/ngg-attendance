@@ -72,6 +72,52 @@ class RegistrationService:
         }
 
     @staticmethod
+    def undoCheckIn(no_order: str):
+        participant = db.get_participant_by_order(no_order)
+        if not participant:
+            raise HTTPException(status_code=404, detail="Peserta tidak ditemukan")
+
+        cleared = db.clear_checkin(no_order)
+        if not cleared:
+            raise HTTPException(status_code=400, detail="Racepack belum diambil")
+
+        sync_ok = False
+        try:
+            sync_ok = db.push_checkin_to_gsheets(no_order)
+        except Exception as e:
+            logger.error(f"GSheets push undo check-in failed for {no_order}: {e}")
+
+        return {
+            "status": "success",
+            "message": "Ambil race pack dibatalkan!",
+            "no_order": no_order,
+            "gsheets_sync": "ok" if sync_ok else "failed",
+        }
+
+    @staticmethod
+    def undoAttendance(no_order: str):
+        participant = db.get_participant_by_order(no_order)
+        if not participant:
+            raise HTTPException(status_code=404, detail="Peserta tidak ditemukan")
+
+        cleared = db.clear_attendance(no_order)
+        if not cleared:
+            raise HTTPException(status_code=400, detail="Peserta belum tercatat hadir")
+
+        sync_ok = False
+        try:
+            sync_ok = db.push_attendance_to_gsheets(no_order)
+        except Exception as e:
+            logger.error(f"GSheets push undo attendance failed for {no_order}: {e}")
+
+        return {
+            "status": "success",
+            "message": "Status hadir dibatalkan!",
+            "no_order": no_order,
+            "gsheets_sync": "ok" if sync_ok else "failed",
+        }
+
+    @staticmethod
     def getAllParticipant():
         data = db.get_all_participants()
         return {

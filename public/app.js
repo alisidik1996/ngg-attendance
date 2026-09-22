@@ -153,6 +153,7 @@ function showParticipantDetail(data) {
 
     document.getElementById("badge-order").textContent = `No: ${data.order_number || "-"}`;
     document.getElementById("res-nama").textContent = data.nama_lengkap_ibu || "-";
+    document.getElementById("res-nama-ayah").textContent = data.nama_lengkap_ayah || "-";
     document.getElementById("res-anak").textContent = data.nama_anak || "-";
     document.getElementById("res-usia").textContent = data.usia_bayi || "-";
     document.getElementById("res-item").textContent = data.item_name || data.paket || "-";
@@ -167,9 +168,10 @@ function showParticipantDetail(data) {
     if (statusRp === "sudah") {
         badgeRp.className = "badge bg-ngg-black fs-6 text-break-safe mt-1";
         badgeRp.textContent = "SUDAH (" + (data.waktu_diambil || "") + ")";
-        btnRp.disabled = true;
-        btnRp.className = "btn btn-outline-black flex-grow-1 disabled";
-        btnRp.textContent = "Telah Diambil";
+        btnRp.disabled = false;
+        btnRp.className = "btn btn-undo flex-grow-1";
+        btnRp.textContent = "Batalkan Ambil Race Pack";
+        btnRp.onclick = doUndoCheckIn;
     } else {
         badgeRp.className = "badge bg-ngg-white text-ngg-black fs-6 text-break-safe mt-1";
         badgeRp.style.border = "1px solid rgba(0,0,0,0.1)";
@@ -177,6 +179,7 @@ function showParticipantDetail(data) {
         btnRp.disabled = false;
         btnRp.className = "btn btn-black flex-grow-1";
         btnRp.textContent = "Ambil Race Pack";
+        btnRp.onclick = doCheckIn;
     }
 
     const statusHadir = String(data.status_hadir || "").trim().toLowerCase();
@@ -186,9 +189,10 @@ function showParticipantDetail(data) {
     if (statusHadir === "hadir") {
         badgeHadir.className = "badge bg-ngg-black fs-6 text-break-safe mt-1";
         badgeHadir.textContent = "SUDAH (" + (data.waktu_hadir || "") + ")";
-        btnHadir.disabled = true;
-        btnHadir.className = "btn btn-outline-black flex-grow-1 disabled";
-        btnHadir.textContent = "Telah Hadir";
+        btnHadir.disabled = false;
+        btnHadir.className = "btn btn-undo flex-grow-1";
+        btnHadir.textContent = "Batalkan Status Hadir";
+        btnHadir.onclick = doUndoAttendance;
     } else {
         badgeHadir.className = "badge bg-ngg-white text-ngg-black fs-6 text-break-safe mt-1";
         badgeHadir.style.border = "1px solid rgba(0,0,0,0.1)";
@@ -196,6 +200,7 @@ function showParticipantDetail(data) {
         btnHadir.disabled = false;
         btnHadir.className = "btn btn-blue flex-grow-1";
         btnHadir.textContent = "Absen Hadir";
+        btnHadir.onclick = doAttendance;
     }
 }
 
@@ -221,6 +226,30 @@ async function doCheckIn() {
     }
 }
 
+async function doUndoCheckIn() {
+    if (!activeOrderNumber) return;
+    if (!confirm("Batalkan ambil race pack untuk peserta ini?")) return;
+
+    const btn = document.getElementById("btn-racepack");
+    setButtonLoading(btn, true, "Memproses...");
+
+    try {
+        await fetchJson(`${API_BASE_URL}/api/registration/check-in/undo`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ no_order: activeOrderNumber })
+        });
+        showToast("Ambil race pack dibatalkan!");
+        void refreshCurrentView();
+        void fetchStats();
+    } catch (e) {
+        console.error("Gagal batalkan check-in", e);
+        showToast(e.message || "Gagal koneksi server");
+    } finally {
+        setButtonLoading(btn, false, "Batalkan Ambil Race Pack");
+    }
+}
+
 async function doAttendance() {
     if (!activeOrderNumber) return;
     const btn = document.getElementById("btn-attendance");
@@ -243,6 +272,30 @@ async function doAttendance() {
     }
 }
 
+async function doUndoAttendance() {
+    if (!activeOrderNumber) return;
+    if (!confirm("Batalkan status hadir untuk peserta ini?")) return;
+
+    const btn = document.getElementById("btn-attendance");
+    setButtonLoading(btn, true, "Memproses...");
+
+    try {
+        await fetchJson(`${API_BASE_URL}/api/registration/attendance/undo`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ no_order: activeOrderNumber })
+        });
+        showToast("Status hadir dibatalkan!");
+        void refreshCurrentView();
+        void fetchStats();
+    } catch (e) {
+        console.error("Gagal batalkan hadir", e);
+        showToast(e.message || "Gagal koneksi server");
+    } finally {
+        setButtonLoading(btn, false, "Batalkan Status Hadir");
+    }
+}
+
 async function refreshCurrentView() {
     if (!activeOrderNumber) return;
     try {
@@ -255,12 +308,30 @@ async function refreshCurrentView() {
 
 let allParticipantsData = [];
 
+const LIST_COLS = 13;
+
+function statusBadge(status, doneValue) {
+    const ok = String(status || "").trim().toLowerCase() === doneValue;
+    return ok
+        ? '<span class="badge bg-ngg-black">Sudah</span>'
+        : '<span class="badge bg-ngg-white text-ngg-black" style="border:1px solid rgba(0,0,0,0.1)">Belum</span>';
+}
+
+function statusBadgeWithTime(status, doneValue, waktu) {
+    const ok = String(status || "").trim().toLowerCase() === doneValue;
+    if (!ok) {
+        return '<span class="badge bg-ngg-white text-ngg-black" style="border:1px solid rgba(0,0,0,0.1)">Belum</span>';
+    }
+    const t = String(waktu || "").trim();
+    return `<span class="badge bg-ngg-black text-nowrap">Sudah${t ? " (" + escapeHtml(t) + ")" : ""}</span>`;
+}
+
 async function loadAllParticipants() {
     const tbody = document.getElementById("alldata-body");
     const btn = document.querySelector("#tab-list .btn-outline-black");
     setButtonLoading(btn, true, "Memuat...");
 
-    tbody.innerHTML = `<tr><td colspan="6" class="text-center py-3"><span class="btn-loading">Sedang mengambil data peserta...</span></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${LIST_COLS}" class="text-center py-3"><span class="btn-loading">Sedang mengambil data peserta...</span></td></tr>`;
 
     try {
         const res = await fetchJson(`${API_BASE_URL}/api/registration/participants`);
@@ -270,12 +341,12 @@ async function loadAllParticipants() {
             renderListPeserta(res.data);
         } else {
             allParticipantsData = [];
-            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-3">Tidak ada data.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="${LIST_COLS}" class="text-center py-3">Tidak ada data.</td></tr>`;
             document.getElementById("list-count").textContent = "";
         }
     } catch (e) {
         console.error("Gagal memuat peserta", e);
-        tbody.innerHTML = `<tr><td colspan="6" class="text-center py-3 text-danger">Gagal menghubungi server.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${LIST_COLS}" class="text-center py-3 text-danger">Gagal menghubungi server.</td></tr>`;
         document.getElementById("list-count").textContent = "";
     } finally {
         setButtonLoading(btn, false, "Muat Ulang");
@@ -287,27 +358,29 @@ function renderListPeserta(data) {
     const countEl = document.getElementById("list-count");
 
     if (data.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" class="text-center py-3">Data tidak ditemukan.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${LIST_COLS}" class="text-center py-3">Data tidak ditemukan.</td></tr>`;
         countEl.textContent = "";
         return;
     }
 
     tbody.innerHTML = "";
     data.forEach(row => {
-        const rp = String(row.status_diambil || "").trim().toLowerCase() === "sudah" ?
-            '<span class="badge bg-ngg-black">Sudah</span>' :
-            '<span class="badge bg-ngg-white text-ngg-black" style="border:1px solid rgba(0,0,0,0.1)">Belum</span>';
-
-        const hd = String(row.status_hadir || "").trim().toLowerCase() === "hadir" ?
-            '<span class="badge bg-ngg-black">Sudah</span>' :
-            '<span class="badge bg-ngg-white text-ngg-black" style="border:1px solid rgba(0,0,0,0.1)">Belum</span>';
+        const rp = statusBadgeWithTime(row.status_diambil, "sudah", row.waktu_diambil);
+        const hd = statusBadgeWithTime(row.status_hadir, "hadir", row.waktu_hadir);
 
         const tr = document.createElement("tr");
         tr.innerHTML = `
-            <td style="font-weight:600;">${escapeHtml(row.order_number || "-")}</td>
-            <td class="text-break-safe" style="min-width: 130px;">${escapeHtml(row.nama_lengkap_ibu || "-")}</td>
+            <td style="font-weight:600;" class="text-nowrap">${escapeHtml(row.order_number || "-")}</td>
+            <td class="text-break-safe" style="min-width: 140px;">${escapeHtml(row.nama_lengkap_ibu || "-")}</td>
+            <td class="text-break-safe" style="min-width: 140px;">${escapeHtml(row.nama_lengkap_ayah || "-")}</td>
             <td class="text-break-safe" style="min-width: 130px;">${escapeHtml(row.nama_anak || "-")}</td>
-            <td>${escapeHtml(row.order_status || "-")}</td>
+            <td class="text-nowrap">${escapeHtml(row.usia_bayi || "-")}</td>
+            <td class="text-nowrap">${escapeHtml(row.nomor_wa || "-")}</td>
+            <td class="text-break-safe" style="min-width: 160px;">${escapeHtml(row.email || "-")}</td>
+            <td class="text-break-safe" style="min-width: 180px;">${escapeHtml(row.item_name || row.paket || "-")}</td>
+            <td class="text-break-safe">${escapeHtml(row.uk_kaos_ibu || "-")}</td>
+            <td class="text-break-safe">${escapeHtml(row.uk_kaos_ayah || "-")}</td>
+            <td class="text-nowrap">${escapeHtml(row.order_status || "-")}</td>
             <td>${rp}</td>
             <td>${hd}</td>`;
         tbody.appendChild(tr);
@@ -324,10 +397,12 @@ function filterListPeserta() {
     }
 
     const filtered = allParticipantsData.filter(row => {
-        const order = String(row.order_number || "").toLowerCase();
-        const nama = String(row.nama_lengkap_ibu || "").toLowerCase();
-        const anak = String(row.nama_anak || "").toLowerCase();
-        return order.includes(keyword) || nama.includes(keyword) || anak.includes(keyword);
+        const fields = [
+            row.order_number, row.nama_lengkap_ibu, row.nama_lengkap_ayah,
+            row.nama_anak, row.nomor_wa, row.email, row.item_name,
+            row.paket, row.order_status, row.usia_bayi
+        ];
+        return fields.some(f => String(f || "").toLowerCase().includes(keyword));
     });
 
     renderListPeserta(filtered);

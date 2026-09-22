@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS participants (
     id SERIAL PRIMARY KEY,
     order_number TEXT UNIQUE NOT NULL,
     nama_lengkap_ibu TEXT DEFAULT '',
+    nama_lengkap_ayah TEXT DEFAULT '',
     nama_anak TEXT DEFAULT '',
     usia_bayi TEXT DEFAULT '',
     item_name TEXT DEFAULT '',
@@ -28,11 +29,13 @@ CREATE INDEX IF NOT EXISTS idx_order_number ON participants(order_number);
 """
 
 KNOWN_COLUMNS = [
-    "order_number", "nama_lengkap_ibu", "nama_anak", "usia_bayi",
+    "order_number", "nama_lengkap_ibu", "nama_lengkap_ayah", "nama_anak", "usia_bayi",
     "item_name", "paket", "uk_kaos_ibu", "uk_kaos_ayah", "order_status",
     "nomor_wa", "email", "status_diambil", "waktu_diambil",
     "status_hadir", "waktu_hadir"
 ]
+
+STATUS_COLUMNS = ["status_diambil", "waktu_diambil", "status_hadir", "waktu_hadir"]
 
 
 def _escape_like(value: str) -> str:
@@ -55,13 +58,23 @@ def get_db():
     return conn
 
 
-def init_db():
+def init_db() -> bool:
+    """Create schema. Returns True if nama_lengkap_ayah was just added (needs backfill)."""
     conn = get_db()
     try:
         with conn.cursor() as cur:
             cur.execute(SCHEMA)
+            cur.execute(
+                """SELECT 1 FROM information_schema.columns
+                   WHERE table_name = 'participants' AND column_name = 'nama_lengkap_ayah'"""
+            )
+            migrated = cur.fetchone() is None
+            if migrated:
+                cur.execute("ALTER TABLE participants ADD COLUMN nama_lengkap_ayah TEXT DEFAULT ''")
+                logger.info("Neon migration: added nama_lengkap_ayah column.")
         conn.commit()
         logger.info("Neon PostgreSQL database initialized.")
+        return migrated
     finally:
         conn.close()
 
@@ -80,7 +93,7 @@ def count_participants() -> int:
 def sync_from_gsheets():
     from core.database import gsheetConnection
 
-    logger.info("Syncing data from Google Sheets to Neon PostgreSQL...")
+    logger.info("Syncing data from Google Sheets to Neon PostgreSQL (merge)...")
     sheet = gsheetConnection()
     data = sheet.get_all_records()
     if not data:
@@ -89,9 +102,17 @@ def sync_from_gsheets():
 
     conn = get_db()
     try:
+        existing = {}
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """SELECT order_number, status_diambil, waktu_diambil, status_hadir, waktu_hadir
+                   FROM participants"""
+            )
+            for r in cur.fetchall():
+                existing[r["order_number"]] = dict(r)
+
         skipped = 0
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM participants")
             for row in data:
                 order_number = str(row.get("order_number", "") or "").strip()
                 if not order_number:
@@ -111,6 +132,17 @@ def sync_from_gsheets():
 
                 unique_cols = list(dict.fromkeys(cols))
                 unique_vals = [vals[cols.index(c)] for c in unique_cols]
+
+                prev = existing.get(order_number)
+                if prev:
+                    for sc in STATUS_COLUMNS:
+                        sheet_val = vals[unique_cols.index(sc)] if sc in unique_cols else ""
+                        if not str(sheet_val).strip() and str(prev.get(sc) or "").strip():
+                            if sc not in unique_cols:
+                                unique_cols.append(sc)
+                                unique_vals.append(prev[sc])
+                            else:
+                                unique_vals[unique_cols.index(sc)] = prev[sc]
 
                 placeholders = ", ".join(["%s"] * len(unique_cols))
                 col_names = ", ".join(unique_cols)
@@ -132,7 +164,7 @@ def sync_from_gsheets():
             cur.execute("SELECT COUNT(*) FROM participants")
             row = cur.fetchone()
             count = row[0] if row else 0
-        logger.info(f"Sync complete: {count} participants loaded to Neon PostgreSQL.")
+        logger.info(f"Sync complete: {count} participants in Neon PostgreSQL.")
     finally:
         conn.close()
 
@@ -184,6 +216,46 @@ def update_attendance(no_order: str, waktu: str) -> bool:
         else:
             conn.rollback()
         return updated
+    finally:
+        conn.close()
+
+
+def clear_checkin(no_order: str) -> bool:
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """UPDATE participants SET status_diambil = '', waktu_diambil = ''
+                   WHERE order_number = %s
+                     AND LOWER(COALESCE(TRIM(status_diambil), '')) = 'sudah'""",
+                (no_order.strip(),)
+            )
+            cleared = cur.rowcount > 0
+        if cleared:
+            conn.commit()
+        else:
+            conn.rollback()
+        return cleared
+    finally:
+        conn.close()
+
+
+def clear_attendance(no_order: str) -> bool:
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """UPDATE participants SET status_hadir = '', waktu_hadir = ''
+                   WHERE order_number = %s
+                     AND LOWER(COALESCE(TRIM(status_hadir), '')) = 'hadir'""",
+                (no_order.strip(),)
+            )
+            cleared = cur.rowcount > 0
+        if cleared:
+            conn.commit()
+        else:
+            conn.rollback()
+        return cleared
     finally:
         conn.close()
 

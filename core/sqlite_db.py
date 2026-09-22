@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS participants (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_number TEXT UNIQUE NOT NULL,
     nama_lengkap_ibu TEXT DEFAULT '',
+    nama_lengkap_ayah TEXT DEFAULT '',
     nama_anak TEXT DEFAULT '',
     usia_bayi TEXT DEFAULT '',
     item_name TEXT DEFAULT '',
@@ -30,11 +31,13 @@ CREATE INDEX IF NOT EXISTS idx_order_number ON participants(order_number);
 """
 
 KNOWN_COLUMNS = [
-    "order_number", "nama_lengkap_ibu", "nama_anak", "usia_bayi",
+    "order_number", "nama_lengkap_ibu", "nama_lengkap_ayah", "nama_anak", "usia_bayi",
     "item_name", "paket", "uk_kaos_ibu", "uk_kaos_ayah", "order_status",
     "nomor_wa", "email", "status_diambil", "waktu_diambil",
     "status_hadir", "waktu_hadir"
 ]
+
+STATUS_COLUMNS = ["status_diambil", "waktu_diambil", "status_hadir", "waktu_hadir"]
 
 
 def _escape_like(value: str) -> str:
@@ -49,13 +52,20 @@ def get_db():
     return conn
 
 
-def init_db():
+def init_db() -> bool:
+    """Create schema. Returns True if nama_lengkap_ayah was just added (needs backfill)."""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = get_db()
     try:
         conn.executescript(SCHEMA)
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(participants)").fetchall()]
+        migrated = "nama_lengkap_ayah" not in cols
+        if migrated:
+            conn.execute("ALTER TABLE participants ADD COLUMN nama_lengkap_ayah TEXT DEFAULT ''")
+            logger.info("SQLite migration: added nama_lengkap_ayah column.")
         conn.commit()
         logger.info("SQLite database initialized.")
+        return migrated
     finally:
         conn.close()
 
@@ -72,7 +82,7 @@ def count_participants() -> int:
 def sync_from_gsheets():
     from core.database import gsheetConnection
 
-    logger.info("Syncing data from Google Sheets to SQLite...")
+    logger.info("Syncing data from Google Sheets to SQLite (merge)...")
     sheet = gsheetConnection()
     data = sheet.get_all_records()
     if not data:
@@ -81,7 +91,12 @@ def sync_from_gsheets():
 
     conn = get_db()
     try:
-        conn.execute("DELETE FROM participants")
+        existing = {
+            r["order_number"]: dict(r)
+            for r in conn.execute(
+                "SELECT order_number, status_diambil, waktu_diambil, status_hadir, waktu_hadir FROM participants"
+            ).fetchall()
+        }
         skipped = 0
         for row in data:
             order_number = str(row.get("order_number", "") or "").strip()
@@ -103,10 +118,28 @@ def sync_from_gsheets():
             unique_cols = list(dict.fromkeys(cols))
             unique_vals = [vals[cols.index(c)] for c in unique_cols]
 
+            prev = existing.get(order_number)
+            if prev:
+                for sc in STATUS_COLUMNS:
+                    if not str(vals[unique_cols.index(sc)] if sc in unique_cols else "").strip():
+                        if str(prev.get(sc) or "").strip():
+                            if sc not in unique_cols:
+                                unique_cols.append(sc)
+                                unique_vals.append(prev[sc])
+                            else:
+                                unique_vals[unique_cols.index(sc)] = prev[sc]
+
             placeholders = ", ".join(["?"] * len(unique_cols))
             col_names = ", ".join(unique_cols)
+            updates = [f"{c} = excluded.{c}" for c in unique_cols if c != "order_number"]
+            if updates:
+                conflict_clause = (
+                    f"ON CONFLICT(order_number) DO UPDATE SET {', '.join(updates)}"
+                )
+            else:
+                conflict_clause = "ON CONFLICT(order_number) DO NOTHING"
             conn.execute(
-                f"INSERT OR REPLACE INTO participants ({col_names}) VALUES ({placeholders})",
+                f"INSERT INTO participants ({col_names}) VALUES ({placeholders}) {conflict_clause}",
                 unique_vals
             )
 
@@ -114,7 +147,7 @@ def sync_from_gsheets():
         count = conn.execute("SELECT COUNT(*) FROM participants").fetchone()[0]
         if skipped:
             logger.warning(f"Skipped {skipped} sheet row(s) with empty order_number.")
-        logger.info(f"Sync complete: {count} participants loaded to SQLite.")
+        logger.info(f"Sync complete: {count} participants in SQLite.")
     finally:
         conn.close()
 
@@ -159,6 +192,38 @@ def update_attendance(no_order: str, waktu: str) -> bool:
         updated = cur.rowcount > 0
         conn.commit()
         return updated
+    finally:
+        conn.close()
+
+
+def clear_checkin(no_order: str) -> bool:
+    conn = get_db()
+    try:
+        cur = conn.execute(
+            """UPDATE participants SET status_diambil = '', waktu_diambil = ''
+               WHERE order_number = ?
+                 AND LOWER(COALESCE(TRIM(status_diambil), '')) = 'sudah'""",
+            (no_order.strip(),)
+        )
+        cleared = cur.rowcount > 0
+        conn.commit()
+        return cleared
+    finally:
+        conn.close()
+
+
+def clear_attendance(no_order: str) -> bool:
+    conn = get_db()
+    try:
+        cur = conn.execute(
+            """UPDATE participants SET status_hadir = '', waktu_hadir = ''
+               WHERE order_number = ?
+                 AND LOWER(COALESCE(TRIM(status_hadir), '')) = 'hadir'""",
+            (no_order.strip(),)
+        )
+        cleared = cur.rowcount > 0
+        conn.commit()
+        return cleared
     finally:
         conn.close()
 
