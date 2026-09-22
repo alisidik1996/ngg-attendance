@@ -265,3 +265,55 @@ body {
     animation: spin 0.6s linear infinite;
     margin: 0 auto 0.75rem;
 }
+
+/* Login screen */
+.login-screen {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #e8f6fc 0%, #ffffff 100%);
+    padding: 1rem;
+}
+
+.login-card {
+    width: 100%;
+    max-width: 380px;
+}
+
+.login-sub {
+    opacity: 0.6;
+    font-size: 0.85rem;
+}
+
+/* Role badge in navbar */
+.role-badge {
+    font-weight: 500;
+    text-transform: uppercase;
+    font-size: 0.65rem;
+    letter-spacing: 0.03em;
+}
+
+.role-badge.role-admin {
+    background-color: var(--ngg-blue);
+    color: var(--ngg-black);
+}
+
+.role-badge.role-staff {
+    background-color: rgba(255, 255, 255, 0.25);
+    color: var(--ngg-white);
+}
+
+/* Admin stat cards */
+.stat-card {
+    background-color: var(--ngg-white);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+}
+
+.stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--ngg-black);
+    line-height: 1.2;
+}

@@ -18,193 +18,466 @@
 
 <body>
 
-    <!-- Navbar -->
-    <nav class="navbar py-2" style="background: linear-gradient(135deg, #87CEEB 0%, #ffffff 100%);">
-        <div class="container-fluid px-3 flex-column flex-md-row gap-2">
-            <span class="navbar-brand mb-0 h5 m-0" style="font-weight: 500;"><i
-                    class="bi bi-person-bounding-box" style="color:#0066cc;"></i> NGG Attendance</span>
-            <span id="live-stats" class="badge p-2" style="font-weight:normal; background: rgba(0,0,0,0.6); color: white;">Memuat
-                statistik...</span>
+    <!-- Login Screen -->
+    <div id="login-screen" class="login-screen">
+        <div class="card card-custom p-4 login-card">
+            <div class="text-center mb-3">
+                <i class="bi bi-person-bounding-box fs-1" style="color:#0066cc;"></i>
+                <h5 class="mt-2 mb-0" style="font-weight:600;">NGG Attendance</h5>
+                <small class="login-sub">Login petugas</small>
+            </div>
+            <div id="login-boot-status" class="text-center mb-3 small login-sub">Memuat sesi...</div>
+            <form id="login-form" class="d-none" onsubmit="return doLogin(event)">
+                <div class="mb-3">
+                    <label class="label-title" for="login-username">Username</label>
+                    <input id="login-username" class="form-control form-control-custom" autocomplete="username"
+                        required autofocus>
+                </div>
+                <div class="mb-3">
+                    <label class="label-title" for="login-password">Password</label>
+                    <input id="login-password" type="password" class="form-control form-control-custom"
+                        autocomplete="current-password" required>
+                </div>
+                <div id="login-error" class="text-danger small mb-2 d-none"></div>
+                <button type="submit" id="btn-login" class="btn btn-black w-100">Masuk</button>
+            </form>
         </div>
-    </nav>
+    </div>
 
-    <div class="container-fluid px-3 px-md-4 py-4">
+    <!-- App Shell (hidden until authenticated) -->
+    <div id="app-shell" class="d-none">
 
-        <!-- Tab Navigasi -->
-        <ul class="nav nav-pills mb-4 justify-content-center" id="pills-tab" role="tablist">
-            <li class="nav-item" role="presentation">
-                <button class="nav-link active bg-ngg-white" id="tab-input-btn" data-bs-toggle="pill"
-                    data-bs-target="#tab-input" type="button"><i class="bi bi-upc-scan"></i> Input Peserta</button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link bg-ngg-white" id="tab-list-btn" data-bs-toggle="pill"
-                    data-bs-target="#tab-list" type="button" onclick="loadAllParticipants()"><i
-                        class="bi bi-table"></i> List Peserta</button>
-            </li>
-        </ul>
-
-        <div class="tab-content" id="pills-tabContent">
-
-            <!-- TAB 1: INPUT PESERTA -->
-            <div class="tab-pane fade show active" id="tab-input" role="tabpanel">
-                <div class="row justify-content-center">
-                    <div class="col-md-9 col-lg-8">
-
-                        <!-- Search Box -->
-                        <div class="card card-custom p-3 mb-3">
-                            <label for="search_keyword" class="label-title mb-2">Cari Peserta (No. Order / No. WA / Email)</label>
-                            <div class="input-group">
-                                <input type="text" id="search_keyword" class="form-control form-control-custom"
-                                    placeholder="Ketik keyword..." autofocus autocomplete="off">
-                                <button id="btn-search" class="btn btn-black px-4" type="button"
-                                    onclick="searchParticipant()">Cari</button>
-                            </div>
-                        </div>
-
-                        <!-- Search Results Table -->
-                        <div id="search-results-container" class="card card-custom p-3 mb-3 d-none">
-                            <h6 class="mb-2" style="font-weight:600;">Hasil Pencarian</h6>
-                            <div class="section-divider"></div>
-                            <div class="table-responsive">
-                                <table class="table table-custom align-middle mb-0">
-                                    <thead>
-                                        <tr>
-                                            <th class="text-nowrap">No. Order</th>
-                                            <th class="text-nowrap">Nama Ibu</th>
-                                            <th class="text-nowrap">No. WA</th>
-                                            <th class="text-nowrap">Paket</th>
-                                            <th class="text-nowrap text-center">Aksi</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="search-results-body">
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-
-                        <!-- Result Detail Area -->
-                        <div id="result-container" class="card card-custom p-4 result-box d-none">
-                            <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-3">
-                                <h5 class="m-0" style="font-weight:600;">Data Peserta</h5>
-                                <span id="badge-order" class="badge bg-ngg-blue fs-6 text-break-safe"
-                                    style="font-weight:normal;">No: -</span>
-                            </div>
-                            <div class="section-divider mb-3"></div>
-
-                            <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-3 mb-4">
-                                <div>
-                                    <span class="label-title">Nama Ibu:</span>
-                                    <span id="res-nama" class="info-value text-break-safe">-</span>
-                                    <div class="mt-1">
-                                        <span class="label-title">Nama Ayah:</span>
-                                        <span id="res-nama-ayah" class="info-value text-break-safe">-</span>
-                                    </div>
-                                </div>
-                                <div>
-                                    <span class="label-title">Nama & Usia Anak:</span>
-                                    <span id="res-anak" class="info-value text-break-safe">-</span>
-                                    (<span id="res-usia" class="info-value">-</span>)
-                                </div>
-                                <div>
-                                    <span class="label-title">Paket / Item:</span>
-                                    <span id="res-item" class="info-value text-break-safe">-</span>
-                                </div>
-                                <div>
-                                    <span class="label-title">Ukuran Kaos Ibu:</span>
-                                    <span id="res-kaos-ibu" class="info-value text-break-safe">-</span>
-                                </div>
-                                <div>
-                                    <span class="label-title">Ukuran Kaos Ayah:</span>
-                                    <span id="res-kaos-ayah" class="info-value text-break-safe">-</span>
-                                </div>
-                                <div>
-                                    <span class="label-title">Status Order:</span>
-                                    <span id="res-order-status" class="info-value text-break-safe">-</span>
-                                </div>
-
-                                <div class="mt-2">
-                                    <span class="label-title">Status Race Pack:</span>
-                                    <span id="res-status-rp" class="badge fs-6 text-break-safe mt-1"
-                                        style="font-weight:normal;">-</span>
-                                </div>
-                                <div class="mt-2">
-                                    <span class="label-title">Status Kehadiran:</span>
-                                    <span id="res-status-hadir" class="badge fs-6 text-break-safe mt-1"
-                                        style="font-weight:normal;">-</span>
-                                </div>
-                            </div>
-
-                            <div class="d-flex flex-column flex-md-row gap-2 mt-2">
-                                <button id="btn-racepack" class="btn btn-black flex-grow-1" onclick="doCheckIn()">
-                                    Ambil Race Pack
-                                </button>
-                                <button id="btn-attendance" class="btn btn-blue flex-grow-1" onclick="doAttendance()">
-                                    Absen Hadir
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Initial State -->
-                        <div id="placeholder-box"
-                            class="card card-custom p-4 text-center result-box d-flex flex-column justify-content-center align-items-center">
-                            <i class="bi bi-upc-scan fs-1 mb-2"></i>
-                            <p class="m-0" style="font-weight:500;">Masukkan No. Order, No. WA, atau Email untuk mencari peserta</p>
-                        </div>
-
+        <!-- Navbar -->
+        <nav class="navbar py-2" style="background: linear-gradient(135deg, #87CEEB 0%, #ffffff 100%);">
+            <div class="container-fluid px-3 flex-column flex-md-row gap-2 align-items-md-center">
+                <span class="navbar-brand mb-0 h5 m-0" style="font-weight: 500;"><i
+                        class="bi bi-person-bounding-box" style="color:#0066cc;"></i> NGG Attendance</span>
+                <div class="d-flex flex-column flex-md-row gap-2 align-items-md-center ms-md-auto">
+                    <span id="live-stats" class="badge p-2"
+                        style="font-weight:normal; background: rgba(0,0,0,0.6); color: white;">Memuat
+                        statistik...</span>
+                    <div id="nav-user-area" class="d-flex align-items-center gap-2">
+                        <span class="badge p-2"
+                            style="font-weight:normal; background: rgba(0,0,0,0.6); color: white;">
+                            <i class="bi bi-person-circle"></i>
+                            <span id="nav-username">-</span>
+                            <span id="nav-role" class="badge role-badge ms-1">staff</span>
+                        </span>
+                        <button class="btn btn-sm btn-outline-black" type="button" onclick="doLogout()">
+                            <i class="bi bi-box-arrow-right"></i> Keluar
+                        </button>
                     </div>
                 </div>
             </div>
+        </nav>
 
-            <!-- TAB 2: LIST PESERTA -->
-            <div class="tab-pane fade" id="tab-list" role="tabpanel">
-                <div class="row justify-content-center">
-                    <div class="col-12">
-                        <div class="card card-custom p-3">
-                            <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-3">
-                                <h6 class="m-0" style="font-weight:600;">Daftar Seluruh Peserta</h6>
-                                <div class="input-group" style="max-width: 300px;">
-                                    <input type="text" id="filter-list" class="form-control form-control-custom"
-                                        placeholder="Filter peserta..." oninput="filterListPeserta()">
-                                    <button class="btn btn-sm btn-outline-black" onclick="loadAllParticipants()">
-                                        <i class="bi bi-arrow-clockwise"></i> Muat Ulang
+        <div class="container-fluid px-3 px-md-4 py-4">
+
+            <!-- Tab Navigasi -->
+            <ul class="nav nav-pills mb-4 justify-content-center" id="pills-tab" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active bg-ngg-white" id="tab-input-btn" data-bs-toggle="pill"
+                        data-bs-target="#tab-input" type="button"><i class="bi bi-upc-scan"></i> Input Peserta</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link bg-ngg-white" id="tab-list-btn" data-bs-toggle="pill"
+                        data-bs-target="#tab-list" type="button" onclick="loadAllParticipants()"><i
+                            class="bi bi-table"></i> List Peserta</button>
+                </li>
+                <li class="nav-item d-none" role="presentation" id="tab-admin-item">
+                    <button class="nav-link bg-ngg-white" id="tab-admin-btn" data-bs-toggle="pill"
+                        data-bs-target="#tab-admin" type="button" onclick="onAdminTabOpen()"><i
+                            class="bi bi-shield-lock"></i> Backoffice</button>
+                </li>
+            </ul>
+
+            <div class="tab-content" id="pills-tabContent">
+
+                <!-- TAB 1: INPUT PESERTA -->
+                <div class="tab-pane fade show active" id="tab-input" role="tabpanel">
+                    <div class="row justify-content-center">
+                        <div class="col-md-9 col-lg-8">
+
+                            <!-- Search Box -->
+                            <div class="card card-custom p-3 mb-3">
+                                <label for="search_keyword" class="label-title mb-2">Cari Peserta (No. Order / No. WA / Email)</label>
+                                <div class="input-group">
+                                    <input type="text" id="search_keyword" class="form-control form-control-custom"
+                                        placeholder="Ketik keyword..." autofocus autocomplete="off">
+                                    <button id="btn-search" class="btn btn-black px-4" type="button"
+                                        onclick="searchParticipant()">Cari</button>
+                                </div>
+                            </div>
+
+                            <!-- Search Results Table -->
+                            <div id="search-results-container" class="card card-custom p-3 mb-3 d-none">
+                                <h6 class="mb-2" style="font-weight:600;">Hasil Pencarian</h6>
+                                <div class="section-divider"></div>
+                                <div class="table-responsive">
+                                    <table class="table table-custom align-middle mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th class="text-nowrap">No. Order</th>
+                                                <th class="text-nowrap">Nama Ibu</th>
+                                                <th class="text-nowrap">No. WA</th>
+                                                <th class="text-nowrap">Paket</th>
+                                                <th class="text-nowrap text-center">Aksi</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="search-results-body">
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- Result Detail Area -->
+                            <div id="result-container" class="card card-custom p-4 result-box d-none">
+                                <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-3">
+                                    <h5 class="m-0" style="font-weight:600;">Data Peserta</h5>
+                                    <span id="badge-order" class="badge bg-ngg-blue fs-6 text-break-safe"
+                                        style="font-weight:normal;">No: -</span>
+                                </div>
+                                <div class="section-divider mb-3"></div>
+
+                                <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-3 mb-4">
+                                    <div>
+                                        <span class="label-title">Nama Ibu:</span>
+                                        <span id="res-nama" class="info-value text-break-safe">-</span>
+                                        <div class="mt-1">
+                                            <span class="label-title">Nama Ayah:</span>
+                                            <span id="res-nama-ayah" class="info-value text-break-safe">-</span>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <span class="label-title">Nama & Usia Anak:</span>
+                                        <span id="res-anak" class="info-value text-break-safe">-</span>
+                                        (<span id="res-usia" class="info-value">-</span>)
+                                    </div>
+                                    <div>
+                                        <span class="label-title">Paket / Item:</span>
+                                        <span id="res-item" class="info-value text-break-safe">-</span>
+                                    </div>
+                                    <div>
+                                        <span class="label-title">Ukuran Kaos Ibu:</span>
+                                        <span id="res-kaos-ibu" class="info-value text-break-safe">-</span>
+                                    </div>
+                                    <div>
+                                        <span class="label-title">Ukuran Kaos Ayah:</span>
+                                        <span id="res-kaos-ayah" class="info-value text-break-safe">-</span>
+                                    </div>
+                                    <div>
+                                        <span class="label-title">Status Order:</span>
+                                        <span id="res-order-status" class="info-value text-break-safe">-</span>
+                                    </div>
+
+                                    <div class="mt-2">
+                                        <span class="label-title">Status Race Pack:</span>
+                                        <span id="res-status-rp" class="badge fs-6 text-break-safe mt-1"
+                                            style="font-weight:normal;">-</span>
+                                    </div>
+                                    <div class="mt-2">
+                                        <span class="label-title">Status Kehadiran:</span>
+                                        <span id="res-status-hadir" class="badge fs-6 text-break-safe mt-1"
+                                            style="font-weight:normal;">-</span>
+                                    </div>
+                                </div>
+
+                                <div class="d-flex flex-column flex-md-row gap-2 mt-2">
+                                    <button id="btn-racepack" class="btn btn-black flex-grow-1" onclick="doCheckIn()">
+                                        Ambil Race Pack
+                                    </button>
+                                    <button id="btn-attendance" class="btn btn-blue flex-grow-1" onclick="doAttendance()">
+                                        Absen Hadir
                                     </button>
                                 </div>
                             </div>
 
-                            <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
-                                <table class="table table-custom align-middle mb-0">
-                                    <thead>
-                                        <tr>
-                                            <th class="text-nowrap">No. Order</th>
-                                            <th class="text-nowrap">Nama Ibu</th>
-                                            <th class="text-nowrap">Nama Ayah</th>
-                                            <th class="text-nowrap">Nama Anak</th>
-                                            <th class="text-nowrap">Usia</th>
-                                            <th class="text-nowrap">No. WA</th>
-                                            <th class="text-nowrap">Email</th>
-                                            <th class="text-nowrap">Paket / Item</th>
-                                            <th class="text-nowrap">Uk. Kaos Ibu</th>
-                                            <th class="text-nowrap">Uk. Kaos Ayah</th>
-                                            <th class="text-nowrap">Status Order</th>
-                                            <th class="text-nowrap">Race Pack</th>
-                                            <th class="text-nowrap">Kehadiran</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="alldata-body">
-                                        <tr>
-                                            <td colspan="13" class="text-center py-3">Klik tombol Muat Ulang untuk
-                                                mengambil data...</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
+                            <!-- Initial State -->
+                            <div id="placeholder-box"
+                                class="card card-custom p-4 text-center result-box d-flex flex-column justify-content-center align-items-center">
+                                <i class="bi bi-upc-scan fs-1 mb-2"></i>
+                                <p class="m-0" style="font-weight:500;">Masukkan No. Order, No. WA, atau Email untuk mencari peserta</p>
                             </div>
 
-                            <div id="list-count" class="text-end mt-2" style="font-size: 0.8rem; opacity: 0.6;"></div>
                         </div>
                     </div>
                 </div>
-            </div>
 
+                <!-- TAB 2: LIST PESERTA -->
+                <div class="tab-pane fade" id="tab-list" role="tabpanel">
+                    <div class="row justify-content-center">
+                        <div class="col-12">
+                            <div class="card card-custom p-3">
+                                <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-3">
+                                    <h6 class="m-0" style="font-weight:600;">Daftar Seluruh Peserta</h6>
+                                    <div class="input-group" style="max-width: 300px;">
+                                        <input type="text" id="filter-list" class="form-control form-control-custom"
+                                            placeholder="Filter peserta..." oninput="filterListPeserta()">
+                                        <button class="btn btn-sm btn-outline-black" onclick="loadAllParticipants()">
+                                            <i class="bi bi-arrow-clockwise"></i> Muat Ulang
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                                    <table class="table table-custom align-middle mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th class="text-nowrap">No. Order</th>
+                                                <th class="text-nowrap">Nama Ibu</th>
+                                                <th class="text-nowrap">Nama Ayah</th>
+                                                <th class="text-nowrap">Nama Anak</th>
+                                                <th class="text-nowrap">Usia</th>
+                                                <th class="text-nowrap">No. WA</th>
+                                                <th class="text-nowrap">Email</th>
+                                                <th class="text-nowrap">Paket / Item</th>
+                                                <th class="text-nowrap">Uk. Kaos Ibu</th>
+                                                <th class="text-nowrap">Uk. Kaos Ayah</th>
+                                                <th class="text-nowrap">Status Order</th>
+                                                <th class="text-nowrap">Race Pack</th>
+                                                <th class="text-nowrap">Kehadiran</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="alldata-body">
+                                            <tr>
+                                                <td colspan="13" class="text-center py-3">Klik tombol Muat Ulang untuk
+                                                    mengambil data...</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div id="list-count" class="text-end mt-2" style="font-size: 0.8rem; opacity: 0.6;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 3: BACKOFFICE (admin only) -->
+                <div class="tab-pane fade" id="tab-admin" role="tabpanel">
+                    <div class="row justify-content-center">
+                        <div class="col-12">
+
+                            <ul class="nav nav-pills mb-3 justify-content-center" id="admin-sub-nav" role="tablist">
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link active bg-ngg-white" id="admin-sub-users-btn"
+                                        data-bs-toggle="pill" data-bs-target="#admin-section-users" type="button"
+                                        onclick="onAdminSection('users')"><i class="bi bi-people"></i> Users</button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link bg-ngg-white" id="admin-sub-logs-btn" data-bs-toggle="pill"
+                                        data-bs-target="#admin-section-logs" type="button"
+                                        onclick="onAdminSection('logs')"><i class="bi bi-journal-text"></i> Log Aktivitas</button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link bg-ngg-white" id="admin-sub-stats-btn" data-bs-toggle="pill"
+                                        data-bs-target="#admin-section-stats" type="button"
+                                        onclick="onAdminSection('stats')"><i class="bi bi-graph-up"></i> Statistik</button>
+                                </li>
+                            </ul>
+
+                            <div class="tab-content" id="admin-sub-content">
+
+                                <!-- Users -->
+                                <div class="tab-pane fade show active" id="admin-section-users" role="tabpanel">
+                                    <div class="card card-custom p-3">
+                                        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-3">
+                                            <h6 class="m-0" style="font-weight:600;">Manajemen Akun</h6>
+                                            <div class="d-flex gap-2">
+                                                <button class="btn btn-sm btn-outline-black"
+                                                    onclick="loadAdminUsers()"><i class="bi bi-arrow-clockwise"></i>
+                                                    Muat Ulang</button>
+                                                <button class="btn btn-sm btn-black" onclick="openCreateUser()"><i
+                                                        class="bi bi-person-plus"></i> Tambah User</button>
+                                            </div>
+                                        </div>
+                                        <div class="table-responsive">
+                                            <table class="table table-custom align-middle mb-0">
+                                                <thead>
+                                                    <tr>
+                                                        <th class="text-nowrap">ID</th>
+                                                        <th class="text-nowrap">Username</th>
+                                                        <th class="text-nowrap">Role</th>
+                                                        <th class="text-nowrap">Status</th>
+                                                        <th class="text-nowrap">Gagal Login</th>
+                                                        <th class="text-nowrap">Locked Until</th>
+                                                        <th class="text-nowrap">Dibuat</th>
+                                                        <th class="text-nowrap text-center">Aksi</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="admin-users-body">
+                                                    <tr>
+                                                        <td colspan="8" class="text-center py-3">Memuat...</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Log Aktivitas -->
+                                <div class="tab-pane fade" id="admin-section-logs" role="tabpanel">
+                                    <div class="card card-custom p-3">
+                                        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-3">
+                                            <h6 class="m-0" style="font-weight:600;">Log Aktivitas (Audit)</h6>
+                                            <div class="d-flex flex-wrap gap-2 align-items-center">
+                                                <select id="audit-action-filter"
+                                                    class="form-select form-select-sm form-control-custom" style="width:auto;">
+                                                    <option value="">Semua action</option>
+                                                    <option value="login">login</option>
+                                                    <option value="login_failed">login_failed</option>
+                                                    <option value="logout">logout</option>
+                                                    <option value="check_in">check_in</option>
+                                                    <option value="attendance">attendance</option>
+                                                    <option value="undo_check_in">undo_check_in</option>
+                                                    <option value="undo_attendance">undo_attendance</option>
+                                                    <option value="user_create">user_create</option>
+                                                    <option value="user_update">user_update</option>
+                                                </select>
+                                                <input id="audit-actor-filter" type="text"
+                                                    class="form-control form-control-sm form-control-custom"
+                                                    placeholder="Actor..." style="width:140px;">
+                                                <input id="audit-entity-filter" type="text"
+                                                    class="form-control form-control-sm form-control-custom"
+                                                    placeholder="Entity ID..." style="width:140px;">
+                                                <button class="btn btn-sm btn-black" onclick="loadAuditLogs(true)"><i
+                                                        class="bi bi-search"></i> Filter</button>
+                                            </div>
+                                        </div>
+                                        <div class="table-responsive" style="max-height: 480px; overflow-y: auto;">
+                                            <table class="table table-custom align-middle mb-0">
+                                                <thead>
+                                                    <tr>
+                                                        <th class="text-nowrap">Waktu</th>
+                                                        <th class="text-nowrap">Actor</th>
+                                                        <th class="text-nowrap">Action</th>
+                                                        <th class="text-nowrap">Entity</th>
+                                                        <th class="text-nowrap">Entity ID</th>
+                                                        <th class="text-nowrap">Detail</th>
+                                                        <th class="text-nowrap">IP</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="audit-body">
+                                                    <tr>
+                                                        <td colspan="7" class="text-center py-3">Memuat...</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <div class="d-flex justify-content-between align-items-center mt-2">
+                                            <span id="audit-count" style="font-size: 0.8rem; opacity: 0.6;"></span>
+                                            <div class="btn-group btn-group-sm">
+                                                <button id="audit-prev" class="btn btn-outline-black"
+                                                    onclick="auditPage(-1)" disabled>Sebelumnya</button>
+                                                <button id="audit-next" class="btn btn-outline-black"
+                                                    onclick="auditPage(1)" disabled>Berikutnya</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Statistik -->
+                                <div class="tab-pane fade" id="admin-section-stats" role="tabpanel">
+                                    <div class="card card-custom p-3">
+                                        <div class="d-flex justify-content-between align-items-center mb-3">
+                                            <h6 class="m-0" style="font-weight:600;">Statistik Admin</h6>
+                                            <button class="btn btn-sm btn-outline-black" onclick="loadAdminStats()"><i
+                                                    class="bi bi-arrow-clockwise"></i> Muat Ulang</button>
+                                        </div>
+                                        <div class="row row-cols-2 row-cols-md-4 g-3 mb-3" id="admin-stats-cards">
+                                            <div class="col">
+                                                <div class="stat-card p-3 text-center">
+                                                    <div class="label-title">User Total</div>
+                                                    <div id="stat-users-total" class="stat-value">-</div>
+                                                </div>
+                                            </div>
+                                            <div class="col">
+                                                <div class="stat-card p-3 text-center">
+                                                    <div class="label-title">User Aktif</div>
+                                                    <div id="stat-users-active" class="stat-value">-</div>
+                                                </div>
+                                            </div>
+                                            <div class="col">
+                                                <div class="stat-card p-3 text-center">
+                                                    <div class="label-title">Log Total</div>
+                                                    <div id="stat-logs-total" class="stat-value">-</div>
+                                                </div>
+                                            </div>
+                                            <div class="col">
+                                                <div class="stat-card p-3 text-center">
+                                                    <div class="label-title">Log Hari Ini</div>
+                                                    <div id="stat-logs-today" class="stat-value">-</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="section-divider"></div>
+                                        <h6 class="mb-2" style="font-weight:600;">Top Actor Hari Ini (check-in / absen)</h6>
+                                        <div class="table-responsive">
+                                            <table class="table table-custom align-middle mb-0">
+                                                <thead>
+                                                    <tr>
+                                                        <th class="text-nowrap">Username</th>
+                                                        <th class="text-nowrap text-end">Aksi</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="top-actors-body">
+                                                    <tr>
+                                                        <td colspan="2" class="text-center py-3">Memuat...</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- User Modal -->
+    <div class="modal fade" id="userModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content card-custom" style="border-radius:10px;">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="userModalTitle" style="font-weight:600;">Tambah User</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="user-edit-id" value="">
+                    <div class="mb-3">
+                        <label class="label-title" for="user-username">Username</label>
+                        <input id="user-username" class="form-control form-control-custom" minlength="3" maxlength="100"
+                            autocomplete="off" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="label-title" for="user-role">Role</label>
+                        <select id="user-role" class="form-select form-control-custom">
+                            <option value="staff">staff</option>
+                            <option value="admin">admin</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="label-title" for="user-password">Password</label>
+                        <input id="user-password" type="password" class="form-control form-control-custom"
+                            minlength="6" autocomplete="new-password"
+                            placeholder="Isi untuk ganti password (min. 6 karakter)">
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="user-active" checked>
+                        <label class="form-check-label" for="user-active">Akun aktif</label>
+                    </div>
+                    <div id="user-modal-error" class="text-danger small d-none"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-black" data-bs-dismiss="modal">Batal</button>
+                    <button type="button" id="btn-save-user" class="btn btn-black" onclick="saveUser()">Simpan</button>
+                </div>
+            </div>
         </div>
     </div>
 

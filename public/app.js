@@ -1,5 +1,6 @@
 const API_BASE_URL = "";
 let activeOrderNumber = "";
+let currentUser = null;
 
 function setButtonLoading(btn, loading, originalText) {
     if (!btn) return;
@@ -19,7 +20,7 @@ document.getElementById("search_keyword").addEventListener("keypress", function 
     if (e.key === "Enter") searchParticipant();
 });
 
-window.addEventListener("load", fetchStats);
+window.addEventListener("load", bootApp);
 
 function showToast(message) {
     const toastEl = document.getElementById('liveToast');
@@ -60,6 +61,11 @@ async function fetchJson(url, options) {
         );
         err.status = response.status;
         err.data = data;
+        if (response.status === 401 && !String(url).includes("/api/auth/")) {
+            showLogin("Sesi berakhir. Silakan login kembali.");
+        } else if (response.status === 403) {
+            showToast(err.message || "Akses ditolak");
+        }
         throw err;
     }
     return data;
@@ -413,4 +419,393 @@ function resetView() {
     document.getElementById("search-results-container").classList.add("d-none");
     document.getElementById("placeholder-box").classList.remove("d-none");
     activeOrderNumber = "";
+}
+
+/* =========================
+   AUTH / SESSION GATE
+   ========================= */
+
+function showLogin(message) {
+    currentUser = null;
+    const shell = document.getElementById("app-shell");
+    const login = document.getElementById("login-screen");
+    if (shell) shell.classList.add("d-none");
+    if (login) login.classList.remove("d-none");
+    const boot = document.getElementById("login-boot-status");
+    const form = document.getElementById("login-form");
+    if (boot) boot.classList.add("d-none");
+    if (form) form.classList.remove("d-none");
+    const errEl = document.getElementById("login-error");
+    if (errEl) {
+        if (message) {
+            errEl.textContent = message;
+            errEl.classList.remove("d-none");
+        } else {
+            errEl.classList.add("d-none");
+        }
+    }
+    const pw = document.getElementById("login-password");
+    if (pw && message) pw.value = "";
+}
+
+function showApp(user) {
+    currentUser = user;
+    const login = document.getElementById("login-screen");
+    const shell = document.getElementById("app-shell");
+    if (login) login.classList.add("d-none");
+    if (shell) shell.classList.remove("d-none");
+
+    const usernameEl = document.getElementById("nav-username");
+    const roleEl = document.getElementById("nav-role");
+    if (usernameEl) usernameEl.textContent = user.username || "-";
+    if (roleEl) {
+        roleEl.textContent = user.role || "-";
+        roleEl.classList.toggle("role-admin", user.role === "admin");
+        roleEl.classList.toggle("role-staff", user.role !== "admin");
+    }
+
+    const adminItem = document.getElementById("tab-admin-item");
+    if (adminItem) {
+        adminItem.classList.toggle("d-none", user.role !== "admin");
+    }
+
+    const errEl = document.getElementById("login-error");
+    if (errEl) errEl.classList.add("d-none");
+    const pw = document.getElementById("login-password");
+    if (pw) pw.value = "";
+
+    void fetchStats();
+}
+
+async function bootApp() {
+    try {
+        const res = await fetchJson(`${API_BASE_URL}/api/auth/me`);
+        if (res && res.user) {
+            showApp(res.user);
+            return;
+        }
+        showLogin();
+    } catch (e) {
+        if (e.status === 401) {
+            showLogin();
+        } else {
+            showLogin(e.message || "Gagal memuat sesi. Periksa koneksi.");
+        }
+    }
+}
+
+async function doLogin(event) {
+    if (event) event.preventDefault();
+    const username = document.getElementById("login-username").value.trim();
+    const password = document.getElementById("login-password").value;
+    const errEl = document.getElementById("login-error");
+    const btn = document.getElementById("btn-login");
+
+    if (!username || !password) {
+        if (errEl) {
+            errEl.textContent = "Isi username dan password.";
+            errEl.classList.remove("d-none");
+        }
+        return false;
+    }
+
+    setButtonLoading(btn, true, "Masuk...");
+    try {
+        const res = await fetchJson(`${API_BASE_URL}/api/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, password }),
+        });
+        if (res && res.user) showApp(res.user);
+    } catch (e) {
+        if (errEl) {
+            errEl.textContent = e.message || "Login gagal";
+            errEl.classList.remove("d-none");
+        }
+    } finally {
+        setButtonLoading(btn, false, "Masuk");
+    }
+    return false;
+}
+
+async function doLogout() {
+    try {
+        await fetchJson(`${API_BASE_URL}/api/auth/logout`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+        });
+    } catch (e) {
+        console.error("Logout error", e);
+    }
+    showLogin();
+}
+
+/* =========================
+   BACKOFFICE (admin)
+   ========================= */
+
+let adminSectionLoaded = {};
+let editingUserId = null;
+let auditOffset = 0;
+const AUDIT_LIMIT = 50;
+
+function onAdminTabOpen() {
+    if (!currentUser || currentUser.role !== "admin") return;
+    if (!adminSectionLoaded.users) void loadAdminUsers();
+    else if (!adminSectionLoaded.logs) void loadAuditLogs(true);
+    else if (!adminSectionLoaded.stats) void loadAdminStats();
+}
+
+function onAdminSection(section) {
+    if (!currentUser || currentUser.role !== "admin") return;
+    if (section === "users" && !adminSectionLoaded.users) void loadAdminUsers();
+    if (section === "logs" && !adminSectionLoaded.logs) void loadAuditLogs(true);
+    if (section === "stats" && !adminSectionLoaded.stats) void loadAdminStats();
+}
+
+async function loadAdminUsers() {
+    const tbody = document.getElementById("admin-users-body");
+    if (!tbody) return;
+    tbody.innerHTML = `<tr><td colspan="8" class="text-center py-3">Memuat...</td></tr>`;
+    try {
+        const res = await fetchJson(`${API_BASE_URL}/api/admin/users`);
+        const rows = res.data || [];
+        adminSectionLoaded.users = true;
+        if (rows.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center py-3">Belum ada user.</td></tr>`;
+            return;
+        }
+        tbody.innerHTML = "";
+        rows.forEach(u => {
+            const active = !!u.is_active;
+            const roleBadge = u.role === "admin"
+                ? '<span class="badge bg-ngg-blue text-nowrap">admin</span>'
+                : '<span class="badge bg-ngg-white text-ngg-black text-nowrap" style="border:1px solid rgba(0,0,0,0.15)">staff</span>';
+            const statusBadge = active
+                ? '<span class="badge bg-ngg-black">Aktif</span>'
+                : '<span class="badge" style="background:#b00020;color:#fff">Nonaktif</span>';
+            const isSelf = currentUser && u.id === currentUser.id;
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td>${escapeHtml(String(u.id))}</td>
+                <td class="text-nowrap" style="font-weight:600;">${escapeHtml(u.username || "-")}${isSelf ? ' <span class="badge bg-ngg-white text-ngg-black" style="border:1px solid rgba(0,0,0,0.15)">Anda</span>' : ""}</td>
+                <td>${roleBadge}</td>
+                <td>${statusBadge}</td>
+                <td>${escapeHtml(String(u.failed_login_count ?? 0))}</td>
+                <td class="text-nowrap">${escapeHtml(u.locked_until || "-")}</td>
+                <td class="text-nowrap">${escapeHtml(String(u.created_at || "-").replace("T", " ").slice(0, 19))}</td>
+                <td class="text-nowrap text-center">
+                    <button class="btn btn-sm btn-outline-black me-1" type="button" data-edit-user="${u.id}"><i class="bi bi-pencil"></i></button>
+                    ${isSelf ? "" : `<button class="btn btn-sm ${active ? "btn-undo" : "btn-blue"}" type="button" data-toggle-user="${u.id}" data-active="${active ? 0 : 1}">${active ? "Nonaktifkan" : "Aktifkan"}</button>`}
+                </td>`;
+            tr.querySelector("[data-edit-user]").addEventListener("click", () => openEditUser(u));
+            const toggleBtn = tr.querySelector("[data-toggle-user]");
+            if (toggleBtn) {
+                toggleBtn.addEventListener("click", () => toggleUserActive(
+                    Number(toggleBtn.dataset.toggleUser),
+                    toggleBtn.dataset.active === "1"
+                ));
+            }
+            tbody.appendChild(tr);
+        });
+    } catch (e) {
+        if (e.status !== 401) {
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center py-3 text-danger">${escapeHtml(e.message || "Gagal memuat user")}</td></tr>`;
+        }
+    }
+}
+
+function openCreateUser() {
+    editingUserId = null;
+    document.getElementById("userModalTitle").textContent = "Tambah User";
+    document.getElementById("user-edit-id").value = "";
+    const usernameInput = document.getElementById("user-username");
+    usernameInput.value = "";
+    usernameInput.disabled = false;
+    document.getElementById("user-role").value = "staff";
+    document.getElementById("user-password").value = "";
+    document.getElementById("user-password").required = true;
+    document.getElementById("user-active").checked = true;
+    document.getElementById("user-active").disabled = false;
+    document.getElementById("user-modal-error").classList.add("d-none");
+    new bootstrap.Modal(document.getElementById("userModal")).show();
+}
+
+function openEditUser(u) {
+    editingUserId = u.id;
+    document.getElementById("userModalTitle").textContent = "Edit User";
+    document.getElementById("user-edit-id").value = String(u.id);
+    const usernameInput = document.getElementById("user-username");
+    usernameInput.value = u.username || "";
+    usernameInput.disabled = true;
+    document.getElementById("user-role").value = u.role === "admin" ? "admin" : "staff";
+    document.getElementById("user-password").value = "";
+    document.getElementById("user-password").required = false;
+    document.getElementById("user-active").checked = !!u.is_active;
+    document.getElementById("user-active").disabled = currentUser && u.id === currentUser.id;
+    document.getElementById("user-modal-error").classList.add("d-none");
+    new bootstrap.Modal(document.getElementById("userModal")).show();
+}
+
+async function saveUser() {
+    const errEl = document.getElementById("user-modal-error");
+    const btn = document.getElementById("btn-save-user");
+    errEl.classList.add("d-none");
+
+    const isCreate = !editingUserId;
+    const username = document.getElementById("user-username").value.trim();
+    const role = document.getElementById("user-role").value;
+    const password = document.getElementById("user-password").value;
+    const isActive = document.getElementById("user-active").checked;
+
+    if (isCreate && (!username || username.length < 3)) {
+        errEl.textContent = "Username min. 3 karakter.";
+        errEl.classList.remove("d-none");
+        return;
+    }
+    if ((isCreate || password) && (!password || password.length < 6)) {
+        errEl.textContent = "Password min. 6 karakter.";
+        errEl.classList.remove("d-none");
+        return;
+    }
+
+    setButtonLoading(btn, true, "Menyimpan...");
+    try {
+        if (isCreate) {
+            await fetchJson(`${API_BASE_URL}/api/admin/users`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username, password, role }),
+            });
+            showToast(`User "${username}" dibuat`);
+        } else {
+            const body = { role };
+            if (password) body.password = password;
+            if (!(currentUser && editingUserId === currentUser.id)) body.is_active = isActive;
+            await fetchJson(`${API_BASE_URL}/api/admin/users/${editingUserId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+            });
+            showToast("User diperbarui");
+        }
+        bootstrap.Modal.getInstance(document.getElementById("userModal"))?.hide();
+        void loadAdminUsers();
+    } catch (e) {
+        errEl.textContent = e.message || "Gagal menyimpan";
+        errEl.classList.remove("d-none");
+    } finally {
+        setButtonLoading(btn, false, "Simpan");
+    }
+}
+
+async function toggleUserActive(userId, activate) {
+    if (!confirm(activate ? "Aktifkan akun ini?" : "Nonaktifkan akun ini?")) return;
+    try {
+        await fetchJson(`${API_BASE_URL}/api/admin/users/${userId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ is_active: activate }),
+        });
+        showToast(activate ? "Akun diaktifkan" : "Akun dinonaktifkan");
+        void loadAdminUsers();
+    } catch (e) {
+        showToast(e.message || "Gagal memperbarui akun");
+    }
+}
+
+async function loadAuditLogs(reset) {
+    if (reset) auditOffset = 0;
+    const tbody = document.getElementById("audit-body");
+    if (!tbody) return;
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center py-3">Memuat...</td></tr>`;
+
+    const action = document.getElementById("audit-action-filter").value.trim();
+    const actor = document.getElementById("audit-actor-filter").value.trim();
+    const entityId = document.getElementById("audit-entity-filter").value.trim();
+    const params = new URLSearchParams({
+        limit: String(AUDIT_LIMIT),
+        offset: String(auditOffset),
+    });
+    if (action) params.set("action", action);
+    if (actor) params.set("actor", actor);
+    if (entityId) params.set("entity_id", entityId);
+
+    try {
+        const res = await fetchJson(`${API_BASE_URL}/api/admin/audit?${params.toString()}`);
+        adminSectionLoaded.logs = true;
+        const items = res.items || [];
+        const total = res.total || 0;
+
+        if (items.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center py-3">Tidak ada log.</td></tr>`;
+        } else {
+            tbody.innerHTML = "";
+            items.forEach(row => {
+                const actionBadge = String(row.action || "").includes("fail") || String(row.action || "").includes("failed")
+                    ? `<span class="badge" style="background:#b00020;color:#fff">${escapeHtml(row.action || "-")}</span>`
+                    : `<span class="badge bg-ngg-black text-nowrap">${escapeHtml(row.action || "-")}</span>`;
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td class="text-nowrap">${escapeHtml(String(row.ts || "").replace("T", " ").slice(0, 19))}</td>
+                    <td class="text-nowrap">${escapeHtml(row.actor_username || "-")}</td>
+                    <td>${actionBadge}</td>
+                    <td class="text-nowrap">${escapeHtml(row.entity || "-")}</td>
+                    <td class="text-nowrap">${escapeHtml(row.entity_id || "-")}</td>
+                    <td class="text-break-safe" style="min-width:140px;">${escapeHtml(row.detail || "")}</td>
+                    <td class="text-nowrap">${escapeHtml(row.ip || "-")}</td>`;
+                tbody.appendChild(tr);
+            });
+        }
+
+        const from = total === 0 ? 0 : auditOffset + 1;
+        const to = Math.min(auditOffset + items.length, total);
+        document.getElementById("audit-count").textContent =
+            items.length ? `Menampilkan ${from}-${to} dari ${total}` : `Total ${total} log`;
+        document.getElementById("audit-prev").disabled = auditOffset <= 0;
+        document.getElementById("audit-next").disabled = auditOffset + AUDIT_LIMIT >= total;
+    } catch (e) {
+        if (e.status !== 401) {
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center py-3 text-danger">${escapeHtml(e.message || "Gagal memuat log")}</td></tr>`;
+            document.getElementById("audit-count").textContent = "";
+            document.getElementById("audit-prev").disabled = true;
+            document.getElementById("audit-next").disabled = true;
+        }
+    }
+}
+
+function auditPage(delta) {
+    const next = auditOffset + delta * AUDIT_LIMIT;
+    if (next < 0) return;
+    auditOffset = next;
+    void loadAuditLogs(false);
+}
+
+async function loadAdminStats() {
+    try {
+        const res = await fetchJson(`${API_BASE_URL}/api/admin/stats`);
+        adminSectionLoaded.stats = true;
+        const a = res.admin || {};
+        document.getElementById("stat-users-total").textContent = a.users_total ?? "-";
+        document.getElementById("stat-users-active").textContent = a.users_active ?? "-";
+        document.getElementById("stat-logs-total").textContent = a.logs_total ?? "-";
+        document.getElementById("stat-logs-today").textContent = a.logs_today ?? "-";
+
+        const tbody = document.getElementById("top-actors-body");
+        const top = a.top_actors_today || [];
+        if (top.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="2" class="text-center py-3">Belum ada aktivitas hari ini.</td></tr>`;
+        } else {
+            tbody.innerHTML = "";
+            top.forEach(row => {
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td>${escapeHtml(row.actor_username || "-")}</td>
+                    <td class="text-end" style="font-weight:600;">${escapeHtml(String(row.count ?? 0))}</td>`;
+                tbody.appendChild(tr);
+            });
+        }
+    } catch (e) {
+        if (e.status !== 401) showToast(e.message || "Gagal memuat statistik admin");
+    }
 }

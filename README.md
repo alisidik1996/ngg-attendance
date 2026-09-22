@@ -22,7 +22,9 @@ Sistem manajemen kehadiran & race pack pickup untuk event **Momaz Next-Gen Grow 
 - Auto-detect: jika `DATABASE_URL` ada → pakai Neon, jika tidak → pakai SQLite
 - Race condition dihilangkan via atomic conditional UPDATE (cek status + tulis dalam satu statement)
 - Sync dari Google Sheets hanya dijalankan saat database kosong (tidak menimpa data yang sudah ada)
-- Push balik ke Google Sheets dilakukan sinkron sebelum response (dijamin selesai di Vercel)
+- Push balik ke Google Sheets dilakukan lewat FastAPI **BackgroundTasks** (respons cepat, field `gsheets_sync: "queued"`)
+- **Login multi-akun** (admin/staff): cookie HttpOnly session, password hash scrypt, lockout 5 gagal → 15 menit
+- **Audit log** ditulis dalam transaksi yang sama dengan setiap aksi tulis (check-in, absen, undo, user, login)
 
 ## Tech Stack
 
@@ -59,7 +61,14 @@ Buat file `.env` di root project:
 ```env
 SPREADSHEET_NAME=NGG Fun Walk Oct 2026 - Data Peserta (PAID)
 CREDENTIALS_FILE=auth-xxx.json
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=admin123
+SESSION_TTL_HOURS=12
+LOGIN_MAX_FAILURES=5
+LOGIN_LOCK_MINUTES=15
 ```
+
+**Bootstrap admin:** saat pertama kali app start, jika tabel `users` masih kosong, akun admin dibuat dari `ADMIN_USERNAME` / `ADMIN_PASSWORD`. Ganti password default di production. Jika `ADMIN_PASSWORD` kosong, password acak digenerate dan dicatat sekali di log server.
 
 ### 4. Run
 
@@ -121,7 +130,15 @@ vercel env add GOOGLE_CREDENTIALS_BASE64 production
 
 vercel env add DATABASE_URL production
 # Input: (paste Neon connection string dari Step 1)
+
+vercel env add ADMIN_USERNAME production
+# Input: admin
+
+vercel env add ADMIN_PASSWORD production
+# Input: (password kuat untuk admin pertama)
 ```
+
+Setelah login pertama, buat akun staff tambahan dari menu **Backoffice → Users**.
 
 ### Step 4: Deploy
 
@@ -137,21 +154,45 @@ https://ngg-attendance.vercel.app/
 
 ## API Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/` | Frontend (Race Desk UI) |
-| `GET` | `/health` | Health check (returns `{"status": "ok", "database": "sqlite/neon", "participants": N}`; **503** jika DB error) |
-| `GET` | `/docs` | Swagger UI documentation (**local development saja**; tidak di-route di Vercel) |
-| `GET` | `/api/registration/participant/{no_order}` | Get participant by order number |
-| `POST` | `/api/registration/check-in` | Race pack pickup |
-| `POST` | `/api/registration/check-in/undo` | **Batalkan** race pack pickup (admin salah input) |
-| `POST` | `/api/registration/attendance` | Mark attendance |
-| `POST` | `/api/registration/attendance/undo` | **Batalkan** status hadir (admin salah input) |
-| `GET` | `/api/registration/participants` | Get all participants |
-| `GET` | `/api/registration/search?keyword=...` | Search participants |
-| `GET` | `/api/registration/stats` | Get statistics |
+Semua endpoint di bawah (kecuali `/`, `/health`, `/docs`, `POST /api/auth/login`) **membutuhkan cookie session** yang didapat dari login. Tanpa login → **401**; akses endpoint admin sebagai staff → **403**.
 
-### Request Body
+| Method | Endpoint | Akses | Description |
+|--------|----------|-------|-------------|
+| `GET` | `/` | - | Frontend (login → Race Desk UI) |
+| `GET` | `/health` | - | Health check (`{"status": "ok", "database": "sqlite/neon", "participants": N}`; **503** jika DB error) |
+| `GET` | `/docs` | - | Swagger UI (**local development saja**) |
+| `POST` | `/api/auth/login` | - | Login `{username, password}` → set cookie `ngg_session` (HttpOnly); **401** salah password, **423** akun terkunci |
+| `POST` | `/api/auth/logout` | sesi | Revoke session + clear cookie |
+| `GET` | `/api/auth/me` | sesi | Profil user saat ini (`id`, `username`, `role`) |
+| `GET` | `/api/registration/participant/{no_order}` | staff | Get participant by order number |
+| `POST` | `/api/registration/check-in` | staff | Race pack pickup (+ audit, GSheets push async) |
+| `POST` | `/api/registration/check-in/undo` | staff | **Batalkan** race pack pickup |
+| `POST` | `/api/registration/attendance` | staff | Mark attendance (+ audit) |
+| `POST` | `/api/registration/attendance/undo` | staff | **Batalkan** status hadir |
+| `GET` | `/api/registration/participants` | staff | Get all participants |
+| `GET` | `/api/registration/search?keyword=...` | staff | Search participants |
+| `GET` | `/api/registration/stats` | staff | Get statistics |
+| `GET` | `/api/admin/users` | admin | List akun |
+| `POST` | `/api/admin/users` | admin | Buat akun `{username, password, role}` |
+| `PATCH` | `/api/admin/users/{id}` | admin | Update password/role/is_active (tidak bisa nonaktifkan/demote diri sendiri) |
+| `GET` | `/api/admin/audit` | admin | Log aktivitas (`limit`, `offset`, `action`, `actor`, `entity_id`) |
+| `GET` | `/api/admin/stats` | admin | Statistik users/logs + top actor hari ini |
+
+### Login & Sesi
+
+```json
+POST /api/auth/login
+{ "username": "admin", "password": "admin123" }
+→ 200 { "status": "success", "user": { "id": 1, "username": "admin", "role": "admin", "is_active": true } }
+Cookie: ngg_session=...; HttpOnly; SameSite=Lax; Secure (saat VERCEL=1)
+```
+
+- Password di-hash dengan **hashlib.scrypt** (stdlib, tanpa dependency tambahan)
+- 5× gagal login berturut-turut → akun terkunci 15 menit (HTTP **423**)
+- Session TTL default 12 jam (`SESSION_TTL_HOURS`)
+- Role: `admin` (user + backoffice) / `staff` (operasional race desk)
+
+### Request Body (Registration)
 
 **Check-in:**
 ```json
@@ -188,21 +229,28 @@ NGG-Attendance/
 ├── .env                    # Environment variables (not committed)
 ├── auth-*.json             # Google service account key (not committed)
 ├── core/
-│   ├── config.py           # Settings loader (SQLite vs Neon auto-detect)
+│   ├── config.py           # Settings loader (SQLite vs Neon + auth env)
+│   ├── auth.py             # Password scrypt, session cookie, require_staff/admin, bootstrap admin
 │   ├── database.py         # Google Sheets connection + shared push helper
-│   ├── sqlite_db.py        # SQLite operations (local dev)
-│   └── neon_db.py          # Neon PostgreSQL operations (production)
+│   ├── sqlite_db.py        # SQLite operations (local dev) + users/sessions/audit
+│   └── neon_db.py          # Neon PostgreSQL operations (production) + users/sessions/audit
 ├── modules/
+│   ├── auth/
+│   │   ├── router.py       # login / logout / me
+│   │   └── schemas.py      # LoginRequest
+│   ├── admin/
+│   │   ├── router.py       # users CRUD, audit list, admin stats
+│   │   └── schemas.py      # CreateUserRequest, UpdateUserRequest
 │   └── registration/
-│       ├── router.py       # API routes
+│       ├── router.py       # API routes (require_staff)
 │       ├── schemas.py      # Pydantic models
-│       └── services.py     # Business logic (auto-detect DB)
+│       └── services.py     # Business logic (write + audit + BackgroundTasks)
 ├── data/
 │   └── attendance.db       # SQLite database (auto-created, local only)
 ├── public/                 # Static files — satu-satunya sumber frontend
-│   ├── index.html
+│   ├── index.html          # Login screen + gate + tabs (Input, List, Backoffice)
 │   ├── styles.css
-│   └── app.js
+│   └── app.js              # Auth gate, fetchJson 401/403, backoffice UI
 └── api/
     └── index.py            # Vercel serverless entry point
 ```
@@ -215,6 +263,12 @@ NGG-Attendance/
 | `CREDENTIALS_FILE` | Local only | Path ke file JSON Google Service Account |
 | `DATABASE_URL` | Production | Neon PostgreSQL connection string |
 | `GOOGLE_CREDENTIALS_BASE64` | Production | Base64 encoded Google Service Account JSON |
+| `ADMIN_USERNAME` | No (default `admin`) | Username admin pertama saat bootstrap |
+| `ADMIN_PASSWORD` | Recommended | Password admin bootstrap (kosong → token acak di log) |
+| `SESSION_TTL_HOURS` | No (default `12`) | Masa berlaku session cookie |
+| `SESSION_COOKIE_NAME` | No (default `ngg_session`) | Nama cookie session |
+| `LOGIN_MAX_FAILURES` | No (default `5`) | Jumlah gagal login sebelum lockout |
+| `LOGIN_LOCK_MINUTES` | No (default `15`) | Durasi lockout (menit) |
 
 ## Troubleshooting
 
@@ -235,7 +289,7 @@ GET /health
 1. Pastikan service account email sudah di-share ke Google Sheets
 2. Pastikan nama spreadsheet benar di `SPREADSHEET_NAME`
 3. Cek logs di Vercel dashboard
-4. Response check-in/attendance menyertakan field `gsheets_sync` (`"ok"` / `"failed"`). Jika `failed`, data tetap tersimpan di database — push dapat diulang dengan sync manual atau re-check.
+4. Response check-in/attendance menyertakan field `gsheets_sync` (`"queued"` jika push dijadwalkan di BackgroundTasks). Data tetap tersimpan di database meskipun push gagal — cek log Vercel untuk hasil push.
 
 ### Neon PostgreSQL Connection Error
 
