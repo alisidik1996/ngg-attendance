@@ -192,8 +192,8 @@ def get_statistics():
             cur.execute("""
                 SELECT
                     COUNT(*) as total,
-                    SUM(CASE WHEN LOWER(status_diambil) = 'sudah' THEN 1 ELSE 0 END) as sudah_ambil,
-                    SUM(CASE WHEN LOWER(status_hadir) = 'hadir' THEN 1 ELSE 0 END) as sudah_hadir
+                    COALESCE(SUM(CASE WHEN LOWER(status_diambil) = 'sudah' THEN 1 ELSE 0 END), 0) as sudah_ambil,
+                    COALESCE(SUM(CASE WHEN LOWER(status_hadir) = 'hadir' THEN 1 ELSE 0 END), 0) as sudah_hadir
                 FROM participants
             """)
             row = cur.fetchone()
