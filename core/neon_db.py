@@ -62,12 +62,25 @@ def init_db():
         conn.close()
 
 
+def count_participants():
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM participants")
+            return cur.fetchone()[0]
+    finally:
+        conn.close()
+
+
 def sync_from_gsheets():
     from core.database import gsheetConnection
 
     logger.info("Syncing data from Google Sheets to Neon PostgreSQL...")
     sheet = gsheetConnection()
     data = sheet.get_all_records()
+    if not data:
+        logger.warning("Google Sheets returned 0 records.")
+        return
 
     conn = get_db()
     try:
