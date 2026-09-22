@@ -18,8 +18,6 @@ PUBLIC_DIR = os.path.join(BASE_DIR, "public")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from core.auth import ensure_bootstrap_admin
-
     if settings.use_neon:
         from core import neon_db
         logger.info("Initializing Neon PostgreSQL database...")
@@ -28,7 +26,6 @@ async def lifespan(app: FastAPI):
             migrated = neon_db.init_db()
         except Exception as e:
             logger.error(f"Neon init failed: {e}")
-        ensure_bootstrap_admin()
         try:
             count = neon_db.count_participants()
             if count == 0 or migrated:
@@ -48,7 +45,6 @@ async def lifespan(app: FastAPI):
             migrated = sqlite_db.init_db()
         except Exception as e:
             logger.error(f"SQLite init failed: {e}")
-        ensure_bootstrap_admin()
         try:
             count = sqlite_db.count_participants()
             if count == 0 or migrated:

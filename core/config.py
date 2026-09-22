@@ -10,8 +10,6 @@ class Settings:
     CREDENTIALS_FILE: str = os.getenv("CREDENTIALS_FILE") or ""
     DATABASE_URL: str = os.getenv("DATABASE_URL", "")
 
-    ADMIN_USERNAME: str = os.getenv("ADMIN_USERNAME") or "admin"
-    ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD") or ""
     SESSION_TTL_HOURS: int = int(os.getenv("SESSION_TTL_HOURS") or "12")
     SESSION_COOKIE_NAME: str = os.getenv("SESSION_COOKIE_NAME") or "ngg_session"
     LOGIN_MAX_FAILURES: int = int(os.getenv("LOGIN_MAX_FAILURES") or "5")

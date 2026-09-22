@@ -61,14 +61,18 @@ Buat file `.env` di root project:
 ```env
 SPREADSHEET_NAME=NGG Fun Walk Oct 2026 - Data Peserta (PAID)
 CREDENTIALS_FILE=auth-xxx.json
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=admin123
 SESSION_TTL_HOURS=12
 LOGIN_MAX_FAILURES=5
 LOGIN_LOCK_MINUTES=15
 ```
 
-**Bootstrap admin:** saat pertama kali app start, jika tabel `users` masih kosong, akun admin dibuat dari `ADMIN_USERNAME` / `ADMIN_PASSWORD`. Ganti password default di production. Jika `ADMIN_PASSWORD` kosong, password acak digenerate dan dicatat sekali di log server.
+**User admin dibuat manual** (tidak ada auto-seed). Generate hash password lalu insert via SQL:
+
+```bash
+python scripts/hash_password.py --sql --username admin
+```
+
+Tempel output `UPDATE`/`INSERT` di SQL editor (SQLite lokal atau Neon Console). Detail di [Membuat / Mengubah User Manual](#membuat--mengubah-user-manual).
 
 ### 4. Run
 
@@ -130,13 +134,12 @@ vercel env add GOOGLE_CREDENTIALS_BASE64 production
 
 vercel env add DATABASE_URL production
 # Input: (paste Neon connection string dari Step 1)
-
-vercel env add ADMIN_USERNAME production
-# Input: admin
-
-vercel env add ADMIN_PASSWORD production
-# Input: (password kuat untuk admin pertama)
 ```
+
+Buat akun admin pertama **manual** di Neon Console (SQL Editor):
+
+1. Jalankan `python scripts/hash_password.py --sql --username admin` lokal
+2. Tempel perintah `INSERT` hasilnya ke Neon SQL Editor → Execute
 
 Setelah login pertama, buat akun staff tambahan dari menu **Backoffice → Users**.
 
@@ -192,6 +195,23 @@ Cookie: ngg_session=...; HttpOnly; SameSite=Lax; Secure (saat VERCEL=1)
 - Session TTL default 12 jam (`SESSION_TTL_HOURS`)
 - Role: `admin` (user + backoffice) / `staff` (operasional race desk)
 
+### Membuat / Mengubah User Manual
+
+Tidak ada auto-seed user. Buat atau ganti password lewat hash + SQL:
+
+```bash
+# 1. Generate hash (password diminta interaktif, echo tampil)
+python scripts/hash_password.py
+
+# 2. Atau langsung output SQL siap tempel (SQLite lokal / Neon Console)
+python scripts/hash_password.py --sql --username admin
+
+# 3. Verifikasi password cocok dengan hash tertentu
+python scripts/hash_password.py --verify 'password-anda' 'scrypt$...'
+```
+
+Karena password di-hash dengan salt acak, **plaintext password tidak disimpan di mana pun** — satu-satunya cara mengubah password adalah menulis hash baru ke kolom `users.password_hash` (via script di atas, atau lewat menu Backoffice → Users setelah berhasil login).
+
 ### Request Body (Registration)
 
 **Check-in:**
@@ -229,8 +249,8 @@ NGG-Attendance/
 ├── .env                    # Environment variables (not committed)
 ├── auth-*.json             # Google service account key (not committed)
 ├── core/
-│   ├── config.py           # Settings loader (SQLite vs Neon + auth env)
-│   ├── auth.py             # Password scrypt, session cookie, require_staff/admin, bootstrap admin
+│   ├── config.py           # Settings loader (SQLite vs Neon + session env)
+│   ├── auth.py             # Password scrypt, session cookie, require_staff/admin
 │   ├── database.py         # Google Sheets connection + shared push helper
 │   ├── sqlite_db.py        # SQLite operations (local dev) + users/sessions/audit
 │   └── neon_db.py          # Neon PostgreSQL operations (production) + users/sessions/audit
@@ -247,6 +267,8 @@ NGG-Attendance/
 │       └── services.py     # Business logic (write + audit + BackgroundTasks)
 ├── data/
 │   └── attendance.db       # SQLite database (auto-created, local only)
+├── scripts/
+│   └── hash_password.py    # Generate hash scrypt untuk buat/edit user manual via SQL
 ├── public/                 # Static files — satu-satunya sumber frontend
 │   ├── index.html          # Login screen + gate + tabs (Input, List, Backoffice)
 │   ├── styles.css
@@ -263,8 +285,6 @@ NGG-Attendance/
 | `CREDENTIALS_FILE` | Local only | Path ke file JSON Google Service Account |
 | `DATABASE_URL` | Production | Neon PostgreSQL connection string |
 | `GOOGLE_CREDENTIALS_BASE64` | Production | Base64 encoded Google Service Account JSON |
-| `ADMIN_USERNAME` | No (default `admin`) | Username admin pertama saat bootstrap |
-| `ADMIN_PASSWORD` | Recommended | Password admin bootstrap (kosong → token acak di log) |
 | `SESSION_TTL_HOURS` | No (default `12`) | Masa berlaku session cookie |
 | `SESSION_COOKIE_NAME` | No (default `ngg_session`) | Nama cookie session |
 | `LOGIN_MAX_FAILURES` | No (default `5`) | Jumlah gagal login sebelum lockout |

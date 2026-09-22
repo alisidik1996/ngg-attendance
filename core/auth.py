@@ -1,14 +1,11 @@
 import hashlib
 import hmac
 import secrets
-import logging
 from datetime import datetime, timezone, timedelta
 
 from fastapi import Depends, HTTPException, Request
 
 from core.config import settings
-
-logger = logging.getLogger(__name__)
 
 if settings.use_neon:
     from core import neon_db as db
@@ -88,28 +85,6 @@ def public_user(user: dict) -> dict:
         "role": user["role"],
         "is_active": bool(user.get("is_active")),
     }
-
-
-def ensure_bootstrap_admin() -> None:
-    try:
-        if db.count_users() > 0:
-            return
-        username = settings.ADMIN_USERNAME or "admin"
-        password = settings.ADMIN_PASSWORD
-        generated = False
-        if not password:
-            password = secrets.token_urlsafe(12)
-            generated = True
-        db.create_user(username, hash_password(password), "admin")
-        if generated:
-            logger.warning(
-                f"ADMIN_PASSWORD not set. Temporary admin '{username}' password: {password} "
-                f"(change it after first login)"
-            )
-        else:
-            logger.info(f"Bootstrap admin '{username}' created.")
-    except Exception as e:
-        logger.error(f"Bootstrap admin failed: {e}")
 
 
 def get_current_user(request: Request) -> dict:

@@ -21,8 +21,6 @@ lifespan_status = {"init": "not_started", "sync": "not_started", "error": None}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from core.auth import ensure_bootstrap_admin
-
     try:
         if settings.use_neon:
             from core import neon_db
@@ -35,7 +33,6 @@ async def lifespan(app: FastAPI):
                 lifespan_status["init"] = "failed"
                 lifespan_status["error"] = f"init_db: {e}"
                 logger.error(f"Neon init_db failed: {e}")
-            ensure_bootstrap_admin()
             try:
                 count = neon_db.count_participants()
                 if count == 0 or migrated:
@@ -59,7 +56,6 @@ async def lifespan(app: FastAPI):
                 lifespan_status["init"] = "failed"
                 lifespan_status["error"] = f"sqlite init: {e}"
                 logger.error(f"SQLite init failed: {e}")
-            ensure_bootstrap_admin()
             try:
                 count = sqlite_db.count_participants()
                 if count == 0 or migrated:
