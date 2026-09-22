@@ -3,7 +3,6 @@ import os
 import json
 import base64
 import logging
-from google.oauth2.service_account import Credentials
 from core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -21,9 +20,7 @@ def gsheetConnection():
             if not cred_base64:
                 raise RuntimeError("GOOGLE_CREDENTIALS_BASE64 env var is not set")
             cred_json = json.loads(base64.b64decode(cred_base64))
-            credentials = Credentials.from_service_account_info(cred_json, scopes=GSCOPES)
-            gc = gspread.Client(auth=credentials)
-            gc.login()
+            gc = gspread.service_account_from_dict(cred_json, scopes=GSCOPES)
         else:
             gc = gspread.service_account(filename=settings.CREDENTIALS_FILE, scopes=GSCOPES)
 
