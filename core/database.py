@@ -3,9 +3,15 @@ import os
 import json
 import base64
 import logging
+from google.oauth2.service_account import Credentials
 from core.config import settings
 
 logger = logging.getLogger(__name__)
+
+GSCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+]
 
 
 def gsheetConnection():
@@ -15,9 +21,11 @@ def gsheetConnection():
             if not cred_base64:
                 raise RuntimeError("GOOGLE_CREDENTIALS_BASE64 env var is not set")
             cred_json = json.loads(base64.b64decode(cred_base64))
-            gc = gspread.service_account.from_dict(cred_json)
+            credentials = Credentials.from_service_account_info(cred_json, scopes=GSCOPES)
+            gc = gspread.Client(auth=credentials)
+            gc.login()
         else:
-            gc = gspread.service_account(filename=settings.CREDENTIALS_FILE)
+            gc = gspread.service_account(filename=settings.CREDENTIALS_FILE, scopes=GSCOPES)
 
         if not settings.SPREADSHEET_NAME:
             raise RuntimeError("SPREADSHEET_NAME env var is not set")
