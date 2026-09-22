@@ -2,9 +2,6 @@ __pycache__/
 *.pyc
 .env
 auth-*.json
-*.json
-!package.json
-!vercel.json
 .vscode/
 .idea/
 data/*.db

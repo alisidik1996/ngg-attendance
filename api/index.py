@@ -4,7 +4,7 @@ import logging
 import traceback
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -53,8 +53,13 @@ async def lifespan(app: FastAPI):
                 lifespan_status["error"] = f"sqlite init: {e}"
                 logger.error(f"SQLite init failed: {e}")
             try:
-                sqlite_db.sync_from_gsheets()
-                lifespan_status["sync"] = "ok"
+                count = sqlite_db.count_participants()
+                if count == 0:
+                    sqlite_db.sync_from_gsheets()
+                    lifespan_status["sync"] = "ok"
+                else:
+                    lifespan_status["sync"] = f"skipped_existing_{count}"
+                    logger.info(f"Sync skipped, {count} participants already in SQLite.")
             except Exception as e:
                 lifespan_status["sync"] = "failed"
                 lifespan_status["error"] = f"sync: {e}"
@@ -71,14 +76,6 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"]
-)
-
 app.include_router(registration_router)
 
 
@@ -89,7 +86,6 @@ def health_check():
         "database": "neon" if settings.use_neon else "sqlite",
         "has_database_url": bool(settings.DATABASE_URL),
         "has_gsheets_creds": bool(os.getenv("GOOGLE_CREDENTIALS_BASE64")) or not settings.is_vercel,
-        "spreadsheet_name": settings.SPREADSHEET_NAME,
         "lifespan": dict(lifespan_status),
     }
     try:
@@ -99,15 +95,11 @@ def health_check():
             result["db_connected"] = True
         else:
             from core import sqlite_db
-            conn = sqlite_db.get_db()
-            try:
-                cur = conn.execute("SELECT COUNT(*) FROM participants")
-                result["participants"] = cur.fetchone()[0]
-            finally:
-                conn.close()
+            result["participants"] = sqlite_db.count_participants()
             result["db_connected"] = True
     except Exception as e:
         result["status"] = "error"
         result["db_connected"] = False
         result["db_error"] = str(e)
+        return JSONResponse(status_code=503, content=result)
     return result

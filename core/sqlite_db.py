@@ -1,8 +1,6 @@
 import sqlite3
-import json
 import os
 import logging
-from core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +37,10 @@ KNOWN_COLUMNS = [
 ]
 
 
+def _escape_like(value: str) -> str:
+    return value.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+
+
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -58,17 +60,35 @@ def init_db():
         conn.close()
 
 
+def count_participants() -> int:
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT COUNT(*) FROM participants").fetchone()
+        return row[0] if row else 0
+    finally:
+        conn.close()
+
+
 def sync_from_gsheets():
     from core.database import gsheetConnection
 
     logger.info("Syncing data from Google Sheets to SQLite...")
     sheet = gsheetConnection()
     data = sheet.get_all_records()
+    if not data:
+        logger.warning("Google Sheets returned 0 records, skipping sync.")
+        return
 
     conn = get_db()
     try:
         conn.execute("DELETE FROM participants")
+        skipped = 0
         for row in data:
+            order_number = str(row.get("order_number", "") or "").strip()
+            if not order_number:
+                skipped += 1
+                continue
+
             cols = []
             vals = []
             for key, val in row.items():
@@ -78,7 +98,7 @@ def sync_from_gsheets():
                     vals.append(str(val) if val is not None else "")
 
             cols.append("order_number")
-            vals.append(str(row.get("order_number", "")))
+            vals.append(order_number)
 
             unique_cols = list(dict.fromkeys(cols))
             unique_vals = [vals[cols.index(c)] for c in unique_cols]
@@ -92,6 +112,8 @@ def sync_from_gsheets():
 
         conn.commit()
         count = conn.execute("SELECT COUNT(*) FROM participants").fetchone()[0]
+        if skipped:
+            logger.warning(f"Skipped {skipped} sheet row(s) with empty order_number.")
         logger.info(f"Sync complete: {count} participants loaded to SQLite.")
     finally:
         conn.close()
@@ -109,44 +131,34 @@ def get_participant_by_order(no_order: str):
         conn.close()
 
 
-def update_checkin(no_order: str, waktu: str):
+def update_checkin(no_order: str, waktu: str) -> bool:
     conn = get_db()
     try:
-        row = conn.execute(
-            "SELECT status_diambil FROM participants WHERE order_number = ?",
-            (no_order.strip(),)
-        ).fetchone()
-
-        if row and str(row["status_diambil"] or "").strip().lower() == "sudah":
-            return False
-
-        conn.execute(
-            "UPDATE participants SET status_diambil = 'Sudah', waktu_diambil = ? WHERE order_number = ?",
+        cur = conn.execute(
+            """UPDATE participants SET status_diambil = 'Sudah', waktu_diambil = ?
+               WHERE order_number = ?
+                 AND LOWER(COALESCE(TRIM(status_diambil), '')) != 'sudah'""",
             (waktu, no_order.strip())
         )
+        updated = cur.rowcount > 0
         conn.commit()
-        return True
+        return updated
     finally:
         conn.close()
 
 
-def update_attendance(no_order: str, waktu: str):
+def update_attendance(no_order: str, waktu: str) -> bool:
     conn = get_db()
     try:
-        row = conn.execute(
-            "SELECT status_hadir FROM participants WHERE order_number = ?",
-            (no_order.strip(),)
-        ).fetchone()
-
-        if row and str(row["status_hadir"] or "").strip().lower() == "hadir":
-            return False
-
-        conn.execute(
-            "UPDATE participants SET status_hadir = 'Hadir', waktu_hadir = ? WHERE order_number = ?",
+        cur = conn.execute(
+            """UPDATE participants SET status_hadir = 'Hadir', waktu_hadir = ?
+               WHERE order_number = ?
+                 AND LOWER(COALESCE(TRIM(status_hadir), '')) != 'hadir'""",
             (waktu, no_order.strip())
         )
+        updated = cur.rowcount > 0
         conn.commit()
-        return True
+        return updated
     finally:
         conn.close()
 
@@ -163,12 +175,12 @@ def get_all_participants():
 def search_participants(keyword: str):
     conn = get_db()
     try:
-        like = f"%{keyword.strip().lower()}%"
+        like = f"%{_escape_like(keyword.strip().lower())}%"
         rows = conn.execute(
             """SELECT * FROM participants
-               WHERE LOWER(order_number) LIKE ?
-                  OR LOWER(nomor_wa) LIKE ?
-                  OR LOWER(email) LIKE ?""",
+               WHERE LOWER(order_number) LIKE ? ESCAPE '!'
+                  OR LOWER(nomor_wa) LIKE ? ESCAPE '!'
+                  OR LOWER(email) LIKE ? ESCAPE '!'""",
             (like, like, like)
         ).fetchall()
         return [dict(r) for r in rows]
@@ -182,8 +194,8 @@ def get_statistics():
         row = conn.execute("""
             SELECT
                 COUNT(*) as total,
-                SUM(CASE WHEN LOWER(status_diambil) = 'sudah' THEN 1 ELSE 0 END) as sudah_ambil,
-                SUM(CASE WHEN LOWER(status_hadir) = 'hadir' THEN 1 ELSE 0 END) as sudah_hadir
+                COALESCE(SUM(CASE WHEN LOWER(status_diambil) = 'sudah' THEN 1 ELSE 0 END), 0) as sudah_ambil,
+                COALESCE(SUM(CASE WHEN LOWER(status_hadir) = 'hadir' THEN 1 ELSE 0 END), 0) as sudah_hadir
             FROM participants
         """).fetchone()
         return {
@@ -196,49 +208,19 @@ def get_statistics():
         conn.close()
 
 
-def push_checkin_to_gsheets(no_order: str):
-    try:
-        from core.database import gsheetConnection
-        sheet = gsheetConnection()
-        data = sheet.get_all_records()
-
-        for idx, row in enumerate(data, start=2):
-            if str(row.get("order_number", "")).strip() == no_order.strip():
-                headers = sheet.row_values(1)
-                status_col = headers.index("status_diambil") + 1
-                waktu_col = headers.index("waktu_diambil") + 1
-
-                participant = get_participant_by_order(no_order)
-                sheet.update_cells([
-                    [idx, status_col, participant["status_diambil"]],
-                    [idx, waktu_col, participant["waktu_diambil"]]
-                ])
-                logger.info(f"Pushed check-in for {no_order} to Google Sheets.")
-                return
-        logger.warning(f"Order {no_order} not found in Google Sheets.")
-    except Exception as e:
-        logger.error(f"Failed to push check-in to Google Sheets: {e}")
+def push_checkin_to_gsheets(no_order: str) -> bool:
+    from core.database import push_status_to_gsheets
+    participant = get_participant_by_order(no_order)
+    if not participant:
+        logger.error(f"Cannot push check-in: participant {no_order} not found in DB.")
+        return False
+    return push_status_to_gsheets(no_order, "status_diambil", "waktu_diambil", participant)
 
 
-def push_attendance_to_gsheets(no_order: str):
-    try:
-        from core.database import gsheetConnection
-        sheet = gsheetConnection()
-        data = sheet.get_all_records()
-
-        for idx, row in enumerate(data, start=2):
-            if str(row.get("order_number", "")).strip() == no_order.strip():
-                headers = sheet.row_values(1)
-                status_col = headers.index("status_hadir") + 1
-                waktu_col = headers.index("waktu_hadir") + 1
-
-                participant = get_participant_by_order(no_order)
-                sheet.update_cells([
-                    [idx, status_col, participant["status_hadir"]],
-                    [idx, waktu_col, participant["waktu_hadir"]]
-                ])
-                logger.info(f"Pushed attendance for {no_order} to Google Sheets.")
-                return
-        logger.warning(f"Order {no_order} not found in Google Sheets.")
-    except Exception as e:
-        logger.error(f"Failed to push attendance to Google Sheets: {e}")
+def push_attendance_to_gsheets(no_order: str) -> bool:
+    from core.database import push_status_to_gsheets
+    participant = get_participant_by_order(no_order)
+    if not participant:
+        logger.error(f"Cannot push attendance: participant {no_order} not found in DB.")
+        return False
+    return push_status_to_gsheets(no_order, "status_hadir", "waktu_hadir", participant)

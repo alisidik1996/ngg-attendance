@@ -2,6 +2,7 @@ const API_BASE_URL = "";
 let activeOrderNumber = "";
 
 function setButtonLoading(btn, loading, originalText) {
+    if (!btn) return;
     if (loading) {
         btn.disabled = true;
         btn.classList.add("btn-loading");
@@ -18,16 +19,21 @@ document.getElementById("search_keyword").addEventListener("keypress", function 
     if (e.key === "Enter") searchParticipant();
 });
 
-window.onload = fetchStats;
+window.addEventListener("load", fetchStats);
 
 function showToast(message) {
     const toastEl = document.getElementById('liveToast');
-    document.getElementById('toast-body').innerText = String(message);
+    const bodyEl = document.getElementById('toast-body');
+    if (!toastEl || !bodyEl) {
+        alert(message);
+        return;
+    }
+    bodyEl.innerText = String(message);
     new bootstrap.Toast(toastEl).show();
 }
 
 function getErrorMessage(detail) {
-    if (!detail) return "Terjadi kesalahan";
+    if (!detail) return "";
     if (typeof detail === "string") return detail;
     if (Array.isArray(detail)) return detail.map(d => d.msg || JSON.stringify(d)).join(", ");
     if (typeof detail === "object") return detail.msg || detail.detail || JSON.stringify(detail);
@@ -40,15 +46,34 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+async function fetchJson(url, options) {
+    const response = await fetch(url, options);
+    let data = null;
+    try {
+        data = await response.json();
+    } catch (e) {
+        data = null;
+    }
+    if (!response.ok) {
+        const err = new Error(
+            (data && getErrorMessage(data.detail)) || `HTTP ${response.status}`
+        );
+        err.status = response.status;
+        err.data = data;
+        throw err;
+    }
+    return data;
+}
+
 async function fetchStats() {
     try {
-        const res = await fetch(`${API_BASE_URL}/api/registration/stats`).then(r => r.json());
+        const res = await fetchJson(`${API_BASE_URL}/api/registration/stats`);
         if (res.status === "success") {
             const s = res.statistics;
             document.getElementById("live-stats").textContent = `Total: ${s.total_peserta} | Race Pack: ${s.race_pack_diambil}/${s.total_peserta} | Hadir: ${s.hadir_hari_h}`;
         }
     } catch (error) {
-        console.error("Gagal load statistik");
+        console.error("Gagal load statistik", error);
     }
 }
 
@@ -60,10 +85,9 @@ async function searchParticipant() {
     setButtonLoading(btn, true, "Mencari...");
 
     try {
-        const response = await fetch(`${API_BASE_URL}/api/registration/search?keyword=${encodeURIComponent(keyword)}`);
-        const res = await response.json();
+        const res = await fetchJson(`${API_BASE_URL}/api/registration/search?keyword=${encodeURIComponent(keyword)}`);
 
-        if (response.ok && res.data.length > 0) {
+        if (res.data && res.data.length > 0) {
             if (res.data.length === 1) {
                 showParticipantDetail(res.data[0]);
             } else {
@@ -74,7 +98,8 @@ async function searchParticipant() {
             resetView();
         }
     } catch (error) {
-        alert("Koneksi ke backend gagal!");
+        console.error("Gagal mencari peserta", error);
+        alert(error.message || "Koneksi ke backend gagal!");
     } finally {
         setButtonLoading(btn, false, "Cari");
     }
@@ -90,7 +115,6 @@ function showSearchResults(data) {
 
     tbody.innerHTML = "";
     data.forEach(row => {
-        const orderNo = escapeHtml(row.order_number || "-");
         const tr = document.createElement("tr");
         tr.innerHTML = `
             <td style="font-weight:600;">${escapeHtml(row.order_number || "-")}</td>
@@ -100,26 +124,21 @@ function showSearchResults(data) {
             <td class="text-center">
                 <button class="btn btn-sm btn-black text-nowrap">Pilih</button>
             </td>`;
-        tr.querySelector("button").addEventListener("click", () => selectParticipant(row.order_number));
+        const pickBtn = tr.querySelector("button");
+        pickBtn.addEventListener("click", () => selectParticipant(row.order_number, pickBtn));
         tbody.appendChild(tr);
     });
 }
 
-async function selectParticipant(orderNo) {
-    const btn = document.querySelector("#search-results-container .btn-black");
+async function selectParticipant(orderNo, btn) {
     setButtonLoading(btn, true, "Memuat...");
 
     try {
-        const response = await fetch(`${API_BASE_URL}/api/registration/participant/${encodeURIComponent(orderNo)}`);
-        const result = await response.json();
-
-        if (response.ok) {
-            showParticipantDetail(result.data);
-        } else {
-            alert(getErrorMessage(result.detail) || "Peserta tidak ditemukan.");
-        }
+        const result = await fetchJson(`${API_BASE_URL}/api/registration/participant/${encodeURIComponent(orderNo)}`);
+        showParticipantDetail(result.data);
     } catch (error) {
-        alert("Koneksi ke backend gagal!");
+        console.error("Gagal memuat peserta", error);
+        alert(error.message || "Peserta tidak ditemukan.");
     } finally {
         setButtonLoading(btn, false, "Pilih");
     }
@@ -186,18 +205,20 @@ async function doCheckIn() {
     setButtonLoading(btn, true, "Memproses...");
 
     try {
-        const response = await fetch(`${API_BASE_URL}/api/registration/check-in`, {
+        await fetchJson(`${API_BASE_URL}/api/registration/check-in`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ no_order: activeOrderNumber })
         });
-        const res = await response.json();
-        if (response.ok) {
-            showToast("Race pack berhasil dicatat!");
-            refreshCurrentView(); fetchStats();
-        } else { showToast(getErrorMessage(res.detail) || "Gagal check-in"); }
-    } catch (e) { showToast("Gagal koneksi server"); }
-    finally { setButtonLoading(btn, false, "Ambil Race Pack"); }
+        showToast("Race pack berhasil dicatat!");
+        void refreshCurrentView();
+        void fetchStats();
+    } catch (e) {
+        console.error("Gagal check-in", e);
+        showToast(e.message || "Gagal koneksi server");
+    } finally {
+        setButtonLoading(btn, false, "Ambil Race Pack");
+    }
 }
 
 async function doAttendance() {
@@ -206,29 +227,30 @@ async function doAttendance() {
     setButtonLoading(btn, true, "Memproses...");
 
     try {
-        const response = await fetch(`${API_BASE_URL}/api/registration/attendance`, {
+        await fetchJson(`${API_BASE_URL}/api/registration/attendance`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ no_order: activeOrderNumber })
         });
-        const res = await response.json();
-        if (response.ok) {
-            showToast("Absensi kehadiran tercatat!");
-            refreshCurrentView(); fetchStats();
-        } else { showToast(getErrorMessage(res.detail) || "Gagal absen"); }
-    } catch (e) { showToast("Gagal koneksi server"); }
-    finally { setButtonLoading(btn, false, "Absen Hadir"); }
+        showToast("Absensi kehadiran tercatat!");
+        void refreshCurrentView();
+        void fetchStats();
+    } catch (e) {
+        console.error("Gagal absen", e);
+        showToast(e.message || "Gagal koneksi server");
+    } finally {
+        setButtonLoading(btn, false, "Absen Hadir");
+    }
 }
 
 async function refreshCurrentView() {
     if (!activeOrderNumber) return;
     try {
-        const response = await fetch(`${API_BASE_URL}/api/registration/participant/${encodeURIComponent(activeOrderNumber)}`);
-        const result = await response.json();
-        if (response.ok) {
-            showParticipantDetail(result.data);
-        }
-    } catch (e) {}
+        const result = await fetchJson(`${API_BASE_URL}/api/registration/participant/${encodeURIComponent(activeOrderNumber)}`);
+        showParticipantDetail(result.data);
+    } catch (e) {
+        console.error("Gagal refresh tampilan peserta", e);
+    }
 }
 
 let allParticipantsData = [];
@@ -241,10 +263,9 @@ async function loadAllParticipants() {
     tbody.innerHTML = `<tr><td colspan="6" class="text-center py-3"><span class="btn-loading">Sedang mengambil data peserta...</span></td></tr>`;
 
     try {
-        const response = await fetch(`${API_BASE_URL}/api/registration/participants`);
-        const res = await response.json();
+        const res = await fetchJson(`${API_BASE_URL}/api/registration/participants`);
 
-        if (response.ok && res.data.length > 0) {
+        if (res.data && res.data.length > 0) {
             allParticipantsData = res.data;
             renderListPeserta(res.data);
         } else {
@@ -253,6 +274,7 @@ async function loadAllParticipants() {
             document.getElementById("list-count").textContent = "";
         }
     } catch (e) {
+        console.error("Gagal memuat peserta", e);
         tbody.innerHTML = `<tr><td colspan="6" class="text-center py-3 text-danger">Gagal menghubungi server.</td></tr>`;
         document.getElementById("list-count").textContent = "";
     } finally {

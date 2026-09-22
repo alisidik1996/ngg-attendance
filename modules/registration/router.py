@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from modules.registration.schemas import CheckInRequest, AttendanceRequest
 from modules.registration.services import RegistrationService
 
@@ -26,7 +26,7 @@ def get_all_participants_endpoint():
     return RegistrationService.getAllParticipant()
 
 @router.get("/search")
-def search_participants_endpoint(keyword: str):
+def search_participants_endpoint(keyword: str = Query(..., min_length=1)):
     return RegistrationService.searchParticipants(keyword)
 
 @router.get("/stats")

@@ -7,20 +7,22 @@ Sistem manajemen kehadiran & race pack pickup untuk event **Momaz Next-Gen Grow 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     LOCAL DEVELOPMENT                        │
-│  Google Sheets → SQLite (local) → async push → GSheets      │
+│  Google Sheets → SQLite (local) → sync push → GSheets       │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
 │                  PRODUCTION (VERCEL + NEON)                  │
-│  Google Sheets → Neon PostgreSQL → async push → GSheets     │
+│  Google Sheets → Neon PostgreSQL → sync push → GSheets      │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 - **SQLite** untuk local development (zero config, fast)
 - **Neon PostgreSQL** untuk production di Vercel (persistent, scalable)
 - **Google Sheets** sebagai source of truth / backup
-- Auto-detect: jika `DATABASE_URL` ada → pakai Neon,否则 pakai SQLite
-- Race condition sudah dihilangkan (database row-level locking)
+- Auto-detect: jika `DATABASE_URL` ada → pakai Neon, jika tidak → pakai SQLite
+- Race condition dihilangkan via atomic conditional UPDATE (cek status + tulis dalam satu statement)
+- Sync dari Google Sheets hanya dijalankan saat database kosong (tidak menimpa data yang sudah ada)
+- Push balik ke Google Sheets dilakukan sinkron sebelum response (dijamin selesai di Vercel)
 
 ## Tech Stack
 
@@ -138,8 +140,8 @@ https://ngg-attendance.vercel.app/
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/` | Frontend (Race Desk UI) |
-| `GET` | `/health` | Health check (returns `{"status": "ok", "database": "sqlite/neon"}`) |
-| `GET` | `/docs` | Swagger UI documentation |
+| `GET` | `/health` | Health check (returns `{"status": "ok", "database": "sqlite/neon", "participants": N}`; **503** jika DB error) |
+| `GET` | `/docs` | Swagger UI documentation (**local development saja**; tidak di-route di Vercel) |
 | `GET` | `/api/registration/participant/{no_order}` | Get participant by order number |
 | `POST` | `/api/registration/check-in` | Race pack pickup |
 | `POST` | `/api/registration/attendance` | Mark attendance |
@@ -176,7 +178,7 @@ NGG-Attendance/
 ├── auth-*.json             # Google service account key (not committed)
 ├── core/
 │   ├── config.py           # Settings loader (SQLite vs Neon auto-detect)
-│   ├── database.py         # Google Sheets connection
+│   ├── database.py         # Google Sheets connection + shared push helper
 │   ├── sqlite_db.py        # SQLite operations (local dev)
 │   └── neon_db.py          # Neon PostgreSQL operations (production)
 ├── modules/
@@ -186,7 +188,7 @@ NGG-Attendance/
 │       └── services.py     # Business logic (auto-detect DB)
 ├── data/
 │   └── attendance.db       # SQLite database (auto-created, local only)
-├── public/                 # Static files (served by Vercel)
+├── public/                 # Static files — satu-satunya sumber frontend
 │   ├── index.html
 │   ├── styles.css
 │   └── app.js
@@ -222,6 +224,7 @@ GET /health
 1. Pastikan service account email sudah di-share ke Google Sheets
 2. Pastikan nama spreadsheet benar di `SPREADSHEET_NAME`
 3. Cek logs di Vercel dashboard
+4. Response check-in/attendance menyertakan field `gsheets_sync` (`"ok"` / `"failed"`). Jika `failed`, data tetap tersimpan di database — push dapat diulang dengan sync manual atau re-check.
 
 ### Neon PostgreSQL Connection Error
 
