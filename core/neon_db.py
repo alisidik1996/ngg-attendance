@@ -35,8 +35,18 @@ KNOWN_COLUMNS = [
 ]
 
 
+def _normalize_dsn(dsn: str) -> str:
+    dsn = dsn.strip()
+    if dsn.startswith("postgres://"):
+        dsn = "postgresql://" + dsn[len("postgres://"):]
+    if "sslmode=" not in dsn:
+        sep = "&" if "?" in dsn else "?"
+        dsn = f"{dsn}{sep}sslmode=require"
+    return dsn
+
+
 def get_db():
-    conn = psycopg2.connect(settings.DATABASE_URL)
+    conn = psycopg2.connect(_normalize_dsn(settings.DATABASE_URL))
     conn.autocommit = False
     return conn
 

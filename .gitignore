@@ -4,6 +4,7 @@ __pycache__/
 auth-*.json
 *.json
 !package.json
+!vercel.json
 .vscode/
 .idea/
 data/*.db

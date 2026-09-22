@@ -19,7 +19,10 @@ async def lifespan(app: FastAPI):
     if settings.use_neon:
         from core import neon_db
         logger.info("Initializing Neon PostgreSQL database...")
-        neon_db.init_db()
+        try:
+            neon_db.init_db()
+        except Exception as e:
+            logger.error(f"Neon init_db failed: {e}")
         try:
             neon_db.sync_from_gsheets()
         except Exception as e:
