@@ -425,8 +425,76 @@ function resetView() {
    AUTH / SESSION GATE
    ========================= */
 
+function resetAppUI() {
+    // Close any open modal
+    const modalEl = document.getElementById("userModal");
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    if (modal) modal.hide();
+
+    // Main tabs → Input Peserta
+    document.querySelectorAll("#pills-tab .nav-link").forEach(b => b.classList.remove("active"));
+    document.getElementById("tab-input-btn")?.classList.add("active");
+    document.querySelectorAll("#pills-tabContent .tab-pane").forEach(p => p.classList.remove("show", "active"));
+    document.getElementById("tab-input")?.classList.add("show", "active");
+
+    // Search & detail peserta
+    activeOrderNumber = "";
+    const searchInput = document.getElementById("search_keyword");
+    if (searchInput) searchInput.value = "";
+    document.getElementById("search-results-container")?.classList.add("d-none");
+    const searchBody = document.getElementById("search-results-body");
+    if (searchBody) searchBody.innerHTML = "";
+    document.getElementById("result-container")?.classList.add("d-none");
+    document.getElementById("placeholder-box")?.classList.remove("d-none");
+
+    // List peserta
+    allParticipantsData = [];
+    const filterList = document.getElementById("filter-list");
+    if (filterList) filterList.value = "";
+    const listBody = document.getElementById("alldata-body");
+    if (listBody) listBody.innerHTML = "";
+    const listCount = document.getElementById("list-count");
+    if (listCount) listCount.textContent = "";
+
+    // Backoffice (admin)
+    adminSectionLoaded = {};
+    auditOffset = 0;
+    editingUserId = null;
+    document.querySelectorAll("#admin-sub-nav .nav-link").forEach(b => b.classList.remove("active"));
+    document.getElementById("admin-sub-users-btn")?.classList.add("active");
+    document.querySelectorAll("#admin-sub-content .tab-pane").forEach(p => p.classList.remove("show", "active"));
+    document.getElementById("admin-section-users")?.classList.add("show", "active");
+    const usersBody = document.getElementById("admin-users-body");
+    if (usersBody) usersBody.innerHTML = `<tr><td colspan="8" class="text-center py-3">Memuat...</td></tr>`;
+    const auditBody = document.getElementById("audit-body");
+    if (auditBody) auditBody.innerHTML = `<tr><td colspan="7" class="text-center py-3">Memuat...</td></tr>`;
+    const auditCount = document.getElementById("audit-count");
+    if (auditCount) auditCount.textContent = "";
+    const auditPrev = document.getElementById("audit-prev");
+    if (auditPrev) auditPrev.disabled = true;
+    const auditNext = document.getElementById("audit-next");
+    if (auditNext) auditNext.disabled = true;
+    const auditAction = document.getElementById("audit-action-filter");
+    if (auditAction) auditAction.value = "";
+    const auditActor = document.getElementById("audit-actor-filter");
+    if (auditActor) auditActor.value = "";
+    const auditEntity = document.getElementById("audit-entity-filter");
+    if (auditEntity) auditEntity.value = "";
+    ["stat-users-total", "stat-users-active", "stat-logs-total", "stat-logs-today"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = "-";
+    });
+    const topActors = document.getElementById("top-actors-body");
+    if (topActors) topActors.innerHTML = `<tr><td colspan="2" class="text-center py-3">Memuat...</td></tr>`;
+
+    // Live stats akan di-refresh oleh fetchStats() saat showApp()
+    const liveStats = document.getElementById("live-stats");
+    if (liveStats) liveStats.textContent = "-";
+}
+
 function showLogin(message) {
     currentUser = null;
+    resetAppUI();
     const shell = document.getElementById("app-shell");
     const login = document.getElementById("login-screen");
     if (shell) shell.classList.add("d-none");
@@ -628,7 +696,7 @@ function openCreateUser() {
     document.getElementById("user-active").checked = true;
     document.getElementById("user-active").disabled = false;
     document.getElementById("user-modal-error").classList.add("d-none");
-    new bootstrap.Modal(document.getElementById("userModal")).show();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("userModal")).show();
 }
 
 function openEditUser(u) {
@@ -644,7 +712,7 @@ function openEditUser(u) {
     document.getElementById("user-active").checked = !!u.is_active;
     document.getElementById("user-active").disabled = currentUser && u.id === currentUser.id;
     document.getElementById("user-modal-error").classList.add("d-none");
-    new bootstrap.Modal(document.getElementById("userModal")).show();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("userModal")).show();
 }
 
 async function saveUser() {
