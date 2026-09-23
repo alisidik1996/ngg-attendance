@@ -11,13 +11,13 @@ Contoh:
   python scripts/hash_password.py --sql --username admin
   (hasil: perintah UPDATE siap tempel di SQL editor Neon)
 
-  python scripts/hash_password.py --verify admin123 'scrypt$...'
+  python scripts/hash_password.py --verify 'password-anda' 'scrypt$...'
 """
 
 import argparse
 import getpass
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -45,8 +45,8 @@ def main():
         if password != confirm:
             print("Password tidak sama.", file=sys.stderr)
             sys.exit(1)
-    if len(password) < 6:
-        print("Password minimal 6 karakter.", file=sys.stderr)
+    if len(password) < 8:
+        print("Password minimal 8 karakter.", file=sys.stderr)
         sys.exit(1)
 
     h = hash_password(password)

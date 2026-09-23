@@ -1,5 +1,7 @@
-from pydantic import BaseModel, BeforeValidator
 from typing import Annotated
+
+from pydantic import BaseModel, BeforeValidator
+
 
 def coerce_to_str(v) -> str:
     if v is None:

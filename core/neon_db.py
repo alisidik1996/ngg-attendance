@@ -1,7 +1,9 @@
+import logging
+from datetime import datetime, timedelta, timezone
+
 import psycopg2
 import psycopg2.extras
-import logging
-from datetime import datetime, timezone, timedelta
+
 from core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -522,26 +524,34 @@ def update_user(user_id: int, password_hash=None, role=None, is_active=None,
 def record_login_failure(username: str, lock_minutes: int = 15, max_failures: int = 5) -> dict:
     conn = get_db()
     try:
+        pending_lock = (
+            datetime.now(timezone.utc) + timedelta(minutes=lock_minutes)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
-                "SELECT id, failed_login_count FROM users WHERE username = %s",
-                (username.strip(),)
+                """UPDATE users
+                   SET failed_login_count = failed_login_count + 1,
+                       locked_until = CASE
+                           WHEN failed_login_count + 1 >= %s THEN %s
+                           ELSE locked_until
+                       END,
+                       updated_at = %s
+                   WHERE username = %s
+                   RETURNING id, failed_login_count, locked_until""",
+                (max_failures, pending_lock, _now_iso(), username.strip()),
             )
             row = cur.fetchone()
-            if not row:
-                return {"exists": False}
-            count = (row["failed_login_count"] or 0) + 1
-            locked_until = None
-            if count >= max_failures:
-                locked_until = (
-                    datetime.now(timezone.utc) + timedelta(minutes=lock_minutes)
-                ).strftime("%Y-%m-%dT%H:%M:%SZ")
-            cur.execute(
-                "UPDATE users SET failed_login_count = %s, locked_until = %s, updated_at = %s WHERE id = %s",
-                (count, locked_until, _now_iso(), row["id"])
-            )
         conn.commit()
-        return {"exists": True, "failed_login_count": count, "locked_until": locked_until}
+        if not row:
+            return {"exists": False}
+        return {
+            "exists": True,
+            "failed_login_count": row["failed_login_count"],
+            "locked_until": row["locked_until"],
+        }
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 

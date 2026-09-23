@@ -1,7 +1,8 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
-from modules.registration.schemas import CheckInRequest, AttendanceRequest
-from modules.registration.services import RegistrationService
+
 from core.auth import client_meta, require_staff
+from modules.registration.schemas import AttendanceRequest, CheckInRequest
+from modules.registration.services import RegistrationService
 
 router = APIRouter(prefix="/api/registration", tags=["Registration Module"])
 

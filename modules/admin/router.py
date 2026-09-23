@@ -4,17 +4,8 @@ from core.auth import (
     client_meta,
     hash_password,
     require_admin,
-    require_staff,
-    public_user,
 )
-
-if True:
-    from core.config import settings
-    if settings.use_neon:
-        from core import neon_db as db
-    else:
-        from core import sqlite_db as db
-
+from core.db import db
 from modules.admin.schemas import CreateUserRequest, UpdateUserRequest
 
 router = APIRouter(prefix="/api/admin", tags=["Admin"])

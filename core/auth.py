@@ -1,21 +1,19 @@
 import hashlib
 import hmac
 import secrets
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException, Request
 
 from core.config import settings
-
-if settings.use_neon:
-    from core import neon_db as db
-else:
-    from core import sqlite_db as db
+from core.db import db
 
 SCRYPT_N = 2 ** 14
 SCRYPT_R = 8
 SCRYPT_P = 1
 SCRYPT_DKLEN = 32
+
+_DUMMY_STORED = "scrypt$00000000000000000000000000000000$" + "0" * 64
 
 
 def hash_password(password: str) -> str:
@@ -39,6 +37,10 @@ def verify_password(password: str, stored: str) -> bool:
         return hmac.compare_digest(dk.hex(), hash_hex)
     except Exception:
         return False
+
+
+def dummy_verify(password: str) -> None:
+    verify_password(password, _DUMMY_STORED)
 
 
 def hash_token(token: str) -> str:
@@ -73,7 +75,11 @@ def _is_locked(locked_until) -> bool:
 
 
 def client_meta(request: Request) -> dict:
-    ip = request.client.host if request.client else ""
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        ip = xff.split(",")[0].strip()
+    else:
+        ip = request.client.host if request.client else ""
     ua = request.headers.get("user-agent", "")
     return {"ip": ip, "user_agent": ua}
 

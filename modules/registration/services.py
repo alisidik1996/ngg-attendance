@@ -1,14 +1,23 @@
-from fastapi import BackgroundTasks, HTTPException
-from datetime import datetime
 import logging
+from datetime import datetime
+
+from fastapi import HTTPException
+
 from core.config import settings
+from core.db import db
 
 logger = logging.getLogger(__name__)
 
-if settings.use_neon:
-    from core import neon_db as db
-else:
-    from core import sqlite_db as db
+
+def _push_status(push_fn, no_order: str, background_tasks=None) -> str:
+    if background_tasks is None or settings.is_vercel:
+        try:
+            return "ok" if push_fn(no_order) else "failed"
+        except Exception as e:
+            logger.error("GSheets push failed for %s: %s", no_order, e)
+            return "failed"
+    background_tasks.add_task(push_fn, no_order)
+    return "queued"
 
 
 class RegistrationService:
@@ -20,7 +29,7 @@ class RegistrationService:
         return {"row_index": participant.get("id", 0), "data": participant}
 
     @staticmethod
-    def checkParticipant(no_order: str, actor: dict = None, background_tasks: BackgroundTasks = None):
+    def checkParticipant(no_order: str, actor: dict = None, background_tasks=None):
         actor = actor or {}
         participant = db.get_participant_by_order(no_order)
         if not participant:
@@ -38,19 +47,18 @@ class RegistrationService:
         if not updated:
             raise HTTPException(status_code=400, detail="Racepack sudah diambil")
 
-        if background_tasks is not None:
-            background_tasks.add_task(db.push_checkin_to_gsheets, no_order)
+        sync = _push_status(db.push_checkin_to_gsheets, no_order, background_tasks)
 
         return {
             "status": "success",
             "message": "Check-in tercatat!",
             "no_order": no_order,
             "waktu_diambil": current_time,
-            "gsheets_sync": "queued",
+            "gsheets_sync": sync,
         }
 
     @staticmethod
-    def attendParticipant(no_order: str, actor: dict = None, background_tasks: BackgroundTasks = None):
+    def attendParticipant(no_order: str, actor: dict = None, background_tasks=None):
         actor = actor or {}
         participant = db.get_participant_by_order(no_order)
         if not participant:
@@ -68,19 +76,18 @@ class RegistrationService:
         if not updated:
             raise HTTPException(status_code=400, detail="Peserta sudah tercatat hadir!")
 
-        if background_tasks is not None:
-            background_tasks.add_task(db.push_attendance_to_gsheets, no_order)
+        sync = _push_status(db.push_attendance_to_gsheets, no_order, background_tasks)
 
         return {
             "status": "success",
             "message": "Kehadiran peserta tercatat!",
             "no_order": no_order,
             "waktu_hadir": current_time,
-            "gsheets_sync": "queued",
+            "gsheets_sync": sync,
         }
 
     @staticmethod
-    def undoCheckIn(no_order: str, actor: dict = None, background_tasks: BackgroundTasks = None):
+    def undoCheckIn(no_order: str, actor: dict = None, background_tasks=None):
         actor = actor or {}
         participant = db.get_participant_by_order(no_order)
         if not participant:
@@ -96,18 +103,17 @@ class RegistrationService:
         if not cleared:
             raise HTTPException(status_code=400, detail="Racepack belum diambil")
 
-        if background_tasks is not None:
-            background_tasks.add_task(db.push_checkin_to_gsheets, no_order)
+        sync = _push_status(db.push_checkin_to_gsheets, no_order, background_tasks)
 
         return {
             "status": "success",
             "message": "Ambil race pack dibatalkan!",
             "no_order": no_order,
-            "gsheets_sync": "queued",
+            "gsheets_sync": sync,
         }
 
     @staticmethod
-    def undoAttendance(no_order: str, actor: dict = None, background_tasks: BackgroundTasks = None):
+    def undoAttendance(no_order: str, actor: dict = None, background_tasks=None):
         actor = actor or {}
         participant = db.get_participant_by_order(no_order)
         if not participant:
@@ -123,14 +129,13 @@ class RegistrationService:
         if not cleared:
             raise HTTPException(status_code=400, detail="Peserta belum tercatat hadir")
 
-        if background_tasks is not None:
-            background_tasks.add_task(db.push_attendance_to_gsheets, no_order)
+        sync = _push_status(db.push_attendance_to_gsheets, no_order, background_tasks)
 
         return {
             "status": "success",
             "message": "Status hadir dibatalkan!",
             "no_order": no_order,
-            "gsheets_sync": "queued",
+            "gsheets_sync": sync,
         }
 
     @staticmethod

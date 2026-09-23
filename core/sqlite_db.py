@@ -1,12 +1,12 @@
-import sqlite3
-import os
 import logging
-from datetime import datetime, timezone
+import os
+import sqlite3
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-DB_PATH = os.path.join(BASE_DIR, "data", "attendance.db")
+DB_PATH = os.environ.get("NGG_SQLITE_PATH") or os.path.join(BASE_DIR, "data", "attendance.db")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS participants (
@@ -480,25 +480,36 @@ def update_user(user_id: int, password_hash=None, role=None, is_active=None,
 def record_login_failure(username: str, lock_minutes: int = 15, max_failures: int = 5) -> dict:
     conn = get_db()
     try:
+        pending_lock = (datetime.now(timezone.utc) + timedelta(minutes=lock_minutes)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        cur = conn.execute(
+            """UPDATE users
+               SET failed_login_count = failed_login_count + 1,
+                   locked_until = CASE
+                       WHEN failed_login_count + 1 >= ? THEN ?
+                       ELSE locked_until
+                   END,
+                   updated_at = ?
+               WHERE username = ?""",
+            (max_failures, pending_lock, _now_iso(), username.strip()),
+        )
+        if cur.rowcount == 0:
+            conn.commit()
+            return {"exists": False}
         row = conn.execute(
-            "SELECT id, failed_login_count FROM users WHERE username = ?",
+            "SELECT id, failed_login_count, locked_until FROM users WHERE username = ?",
             (username.strip(),)
         ).fetchone()
-        if not row:
-            return {"exists": False}
-        count = (row["failed_login_count"] or 0) + 1
-        locked_until = None
-        if count >= max_failures:
-            from datetime import timedelta
-            locked_until = (datetime.now(timezone.utc) + timedelta(minutes=lock_minutes)).strftime(
-                "%Y-%m-%dT%H:%M:%SZ"
-            )
-        conn.execute(
-            "UPDATE users SET failed_login_count = ?, locked_until = ?, updated_at = ? WHERE id = ?",
-            (count, locked_until, _now_iso(), row["id"])
-        )
         conn.commit()
-        return {"exists": True, "failed_login_count": count, "locked_until": locked_until}
+        return {
+            "exists": True,
+            "failed_login_count": row["failed_login_count"],
+            "locked_until": row["locked_until"],
+        }
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 

@@ -22,9 +22,12 @@ Sistem manajemen kehadiran & race pack pickup untuk event **Momaz Next-Gen Grow 
 - Auto-detect: jika `DATABASE_URL` ada → pakai Neon, jika tidak → pakai SQLite
 - Race condition dihilangkan via atomic conditional UPDATE (cek status + tulis dalam satu statement)
 - Sync dari Google Sheets hanya dijalankan saat database kosong (tidak menimpa data yang sudah ada)
-- Push balik ke Google Sheets dilakukan lewat FastAPI **BackgroundTasks** (respons cepat, field `gsheets_sync: "queued"`)
-- **Login multi-akun** (admin/staff): cookie HttpOnly session, password hash scrypt, lockout 5 gagal → 15 menit
+- Push balik ke Google Sheets: **sinkron dengan retry (3×)** di Vercel (BackgroundTasks serverless tidak selalu selesai), async via BackgroundTasks di local
+- **Login multi-akun** (admin/staff): cookie HttpOnly session, password hash scrypt (min 8 karakter), lockout 5 gagal → 15 menit, rate limit per-IP (30/menit default → HTTP 429)
 - **Audit log** ditulis dalam transaksi yang sama dengan setiap aksi tulis (check-in, absen, undo, user, login)
+- **Swagger/ReDoc/OpenAPI dimatikan di production** (`api/index.py`), aktif hanya di local dev (`main.py`)
+- **Global exception handler** + request logging (method, path, status, duration)
+- **CI**: GitHub Actions menjalankan `ruff check` + `pytest` di setiap push/PR
 
 ## Tech Stack
 
@@ -56,7 +59,11 @@ pip install -r requirements.txt
 
 ### 3. Environment Variables
 
-Buat file `.env` di root project:
+Buat file `.env` di root project (salin dari `.env.example`):
+
+```bash
+cp .env.example .env
+```
 
 ```env
 SPREADSHEET_NAME=NGG Fun Walk Oct 2026 - Data Peserta (PAID)
@@ -64,6 +71,8 @@ CREDENTIALS_FILE=auth-xxx.json
 SESSION_TTL_HOURS=12
 LOGIN_MAX_FAILURES=5
 LOGIN_LOCK_MINUTES=15
+LOGIN_RATE_LIMIT=30
+LOGIN_RATE_WINDOW_SECONDS=60
 ```
 
 **User admin dibuat manual** (tidak ada auto-seed). Generate hash password lalu insert via SQL:
@@ -83,6 +92,14 @@ python main.py
 Buka `http://127.0.0.1:2424` di browser.
 
 **Note:** Local development otomatis pakai SQLite. Tidak perlu setup database apapun.
+
+### 5. Jalankan Test & Lint
+
+```bash
+pip install -r requirements-dev.txt
+ruff check .
+pytest -q
+```
 
 ## Setup (Production - Vercel + Neon)
 
@@ -163,7 +180,7 @@ Semua endpoint di bawah (kecuali `/`, `/health`, `/docs`, `POST /api/auth/login`
 |--------|----------|-------|-------------|
 | `GET` | `/` | - | Frontend (login → Race Desk UI) |
 | `GET` | `/health` | - | Health check (`{"status": "ok", "database": "sqlite/neon", "participants": N}`; **503** jika DB error) |
-| `GET` | `/docs` | - | Swagger UI (**local development saja**) |
+| `GET` | `/docs` | - | Swagger UI (**local development saja**; **dimatikan di production**) |
 | `POST` | `/api/auth/login` | - | Login `{username, password}` → set cookie `ngg_session` (HttpOnly); **401** salah password, **423** akun terkunci |
 | `POST` | `/api/auth/logout` | sesi | Revoke session + clear cookie |
 | `GET` | `/api/auth/me` | sesi | Profil user saat ini (`id`, `username`, `role`) |
@@ -185,13 +202,16 @@ Semua endpoint di bawah (kecuali `/`, `/health`, `/docs`, `POST /api/auth/login`
 
 ```json
 POST /api/auth/login
-{ "username": "admin", "password": "admin123" }
+{ "username": "admin", "password": "<password-anda-min-8-karakter>" }
 → 200 { "status": "success", "user": { "id": 1, "username": "admin", "role": "admin", "is_active": true } }
 Cookie: ngg_session=...; HttpOnly; SameSite=Lax; Secure (saat VERCEL=1)
 ```
 
-- Password di-hash dengan **hashlib.scrypt** (stdlib, tanpa dependency tambahan)
+- Password di-hash dengan **hashlib.scrypt** (stdlib, tanpa dependency tambahan), **minimal 8 karakter**
 - 5× gagal login berturut-turut → akun terkunci 15 menit (HTTP **423**)
+- Rate limit per-IP: default 30 percobaan login per 60 detik → HTTP **429**
+- IP client diambil dari header `X-Forwarded-For` (akurat di belakang proxy Vercel)
+- Unknown user tetal menjalankan dummy password verify (mitigasi user-enumeration timing)
 - Session TTL default 12 jam (`SESSION_TTL_HOURS`)
 - Role: `admin` (user + backoffice) / `staff` (operasional race desk)
 
@@ -243,28 +263,38 @@ POST /api/registration/attendance/undo
 
 ```
 NGG-Attendance/
-├── main.py                 # FastAPI app (local dev)
+├── main.py                 # Local dev entry (create_app serve_static + docs on)
 ├── requirements.txt        # Python dependencies
+├── requirements-dev.txt    # Dev: pytest, httpx, ruff
+├── ruff.toml               # Lint config
 ├── vercel.json             # Vercel deployment config
+├── .env.example            # Env template (copy ke .env)
 ├── .env                    # Environment variables (not committed)
+├── .github/workflows/ci.yml# CI: ruff + pytest
 ├── auth-*.json             # Google service account key (not committed)
 ├── core/
-│   ├── config.py           # Settings loader (SQLite vs Neon + session env)
+│   ├── app.py              # Shared create_app (lifespan, handlers, /health)
+│   ├── config.py           # Settings + startup validation
+│   ├── db.py               # DB facade (pilih neon_db / sqlite_db)
 │   ├── auth.py             # Password scrypt, session cookie, require_staff/admin
-│   ├── database.py         # Google Sheets connection + shared push helper
+│   ├── ratelimit.py        # Sliding-window rate limiter (login per-IP)
+│   ├── database.py         # Google Sheets connection + push helper (retry 3×)
 │   ├── sqlite_db.py        # SQLite operations (local dev) + users/sessions/audit
 │   └── neon_db.py          # Neon PostgreSQL operations (production) + users/sessions/audit
 ├── modules/
 │   ├── auth/
-│   │   ├── router.py       # login / logout / me
+│   │   ├── router.py       # login / logout / me (rate limit + dummy verify)
 │   │   └── schemas.py      # LoginRequest
 │   ├── admin/
 │   │   ├── router.py       # users CRUD, audit list, admin stats
-│   │   └── schemas.py      # CreateUserRequest, UpdateUserRequest
+│   │   └── schemas.py      # CreateUserRequest, UpdateUserRequest (password min 8)
 │   └── registration/
 │       ├── router.py       # API routes (require_staff)
 │       ├── schemas.py      # Pydantic models
-│       └── services.py     # Business logic (write + audit + BackgroundTasks)
+│       └── services.py     # Business logic (write + audit + GSheets push)
+├── tests/
+│   ├── conftest.py         # Test fixtures (temp SQLite per test)
+│   └── test_api.py         # Auth, RBAC, check-in/undo, rate limit, docs
 ├── data/
 │   └── attendance.db       # SQLite database (auto-created, local only)
 ├── scripts/
@@ -274,7 +304,7 @@ NGG-Attendance/
 │   ├── styles.css
 │   └── app.js              # Auth gate, fetchJson 401/403, backoffice UI
 └── api/
-    └── index.py            # Vercel serverless entry point
+    └── index.py            # Vercel serverless entry (docs disabled)
 ```
 
 ## Environment Variables
@@ -289,6 +319,10 @@ NGG-Attendance/
 | `SESSION_COOKIE_NAME` | No (default `ngg_session`) | Nama cookie session |
 | `LOGIN_MAX_FAILURES` | No (default `5`) | Jumlah gagal login sebelum lockout |
 | `LOGIN_LOCK_MINUTES` | No (default `15`) | Durasi lockout (menit) |
+| `LOGIN_RATE_LIMIT` | No (default `30`) | Max percobaan login per IP dalam window |
+| `LOGIN_RATE_WINDOW_SECONDS` | No (default `60`) | Window rate limit login (detik) |
+
+Salin `.env.example` → `.env` lalu isi nilai sesuai environment.
 
 ## Troubleshooting
 
@@ -309,13 +343,26 @@ GET /health
 1. Pastikan service account email sudah di-share ke Google Sheets
 2. Pastikan nama spreadsheet benar di `SPREADSHEET_NAME`
 3. Cek logs di Vercel dashboard
-4. Response check-in/attendance menyertakan field `gsheets_sync` (`"queued"` jika push dijadwalkan di BackgroundTasks). Data tetap tersimpan di database meskipun push gagal — cek log Vercel untuk hasil push.
+4. Response check-in/attendance menyertakan field `gsheets_sync`:
+   - `"queued"` — local dev, push di BackgroundTasks
+   - `"ok"` / `"failed"` — production (Vercel), push sinkron dengan retry 3×
+   Data tetap tersimpan di database meskipun push gagal — cek log Vercel untuk hasil push.
 
 ### Neon PostgreSQL Connection Error
 
 1. Pastikan `DATABASE_URL` benar dan mengandung `sslmode=require`
 2. Pastikan IP Vercel sudah di-whitelist di Neon (opsional, Neon default allow all)
 3. Cek apakah database sudah dibuat di Neon Console
+
+### Testing & Linting
+
+```bash
+pip install -r requirements-dev.txt
+ruff check .
+pytest -q
+```
+
+CI (GitHub Actions) menjalankan `ruff` + `pytest` otomatis di setiap push/PR ke `main`.
 
 ### Cold Start Lambat
 

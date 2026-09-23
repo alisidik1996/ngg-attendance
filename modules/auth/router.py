@@ -6,8 +6,8 @@ from core.auth import (
     _is_locked,
     clear_session_cookie,
     client_meta,
+    dummy_verify,
     get_current_user,
-    hash_password,
     hash_token,
     new_session_token,
     public_user,
@@ -15,12 +15,8 @@ from core.auth import (
     verify_password,
 )
 from core.config import settings
-
-if settings.use_neon:
-    from core import neon_db as db
-else:
-    from core import sqlite_db as db
-
+from core.db import db
+from core.ratelimit import login_rate_limiter
 from modules.auth.schemas import LoginRequest
 
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
@@ -29,6 +25,15 @@ router = APIRouter(prefix="/api/auth", tags=["Auth"])
 @router.post("/login")
 def login(payload: LoginRequest, request: Request):
     meta = client_meta(request)
+    ip_key = meta["ip"] or "unknown"
+    if not login_rate_limiter.allow(
+        ip_key, settings.LOGIN_RATE_LIMIT, settings.LOGIN_RATE_WINDOW_SECONDS
+    ):
+        raise HTTPException(
+            status_code=429,
+            detail="Terlalu banyak percobaan login. Coba lagi nanti.",
+        )
+
     username = payload.username.strip()
     user = db.get_user_by_username(username)
 
@@ -42,26 +47,28 @@ def login(payload: LoginRequest, request: Request):
             detail=f"Akun terkunci sampai {user['locked_until']} karena terlalu banyak gagal login",
         )
 
-    if not user or not verify_password(payload.password, user["password_hash"]):
-        if user:
-            result = db.record_login_failure(
-                username,
-                lock_minutes=settings.LOGIN_LOCK_MINUTES,
-                max_failures=settings.LOGIN_MAX_FAILURES,
-            )
-            detail = "Username atau password salah"
-            if result.get("locked_until"):
-                detail = f"Akun terkunci sampai {result['locked_until']}"
-            db.insert_audit_log(
-                user.get("id"), username, "login_failed", "user", username,
-                detail, meta["ip"], meta["user_agent"],
-            )
-            raise HTTPException(status_code=401, detail=detail)
+    if not user:
+        dummy_verify(payload.password)
         db.insert_audit_log(
             None, username, "login_failed", "user", username,
             "unknown_user", meta["ip"], meta["user_agent"],
         )
         raise HTTPException(status_code=401, detail="Username atau password salah")
+
+    if not verify_password(payload.password, user["password_hash"]):
+        result = db.record_login_failure(
+            username,
+            lock_minutes=settings.LOGIN_LOCK_MINUTES,
+            max_failures=settings.LOGIN_MAX_FAILURES,
+        )
+        detail = "Username atau password salah"
+        if result.get("locked_until"):
+            detail = f"Akun terkunci sampai {result['locked_until']}"
+        db.insert_audit_log(
+            user.get("id"), username, "login_failed", "user", username,
+            detail, meta["ip"], meta["user_agent"],
+        )
+        raise HTTPException(status_code=401, detail=detail)
 
     if not int(user.get("is_active") or 0):
         db.insert_audit_log(
