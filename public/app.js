@@ -318,8 +318,9 @@ async function refreshCurrentView() {
 let allParticipantsData = [];
 
 const LIST_COLS = 13;
-const LIST_PAGE_SIZE = 25;
+const LIST_PAGE_SIZES = [10, 20, 100];
 
+let listPageSize = 20;
 let listSortKey = "order_number";
 let listSortDir = "asc";
 let listPage = 0;
@@ -438,6 +439,74 @@ function updateListSortIndicators() {
     });
 }
 
+function getFilteredParticipants() {
+    const keyword = document.getElementById("filter-list")?.value.trim().toLowerCase() || "";
+    if (!keyword) return allParticipantsData;
+    return allParticipantsData.filter(row => {
+        const fields = [
+            row.order_number, row.nama_lengkap_ibu, row.nama_lengkap_ayah,
+            row.nama_anak, row.nomor_wa, row.email, row.item_name,
+            row.paket, row.order_status, row.usia_bayi
+        ];
+        return fields.some(f => String(f || "").toLowerCase().includes(keyword));
+    });
+}
+
+function changeListPageSize() {
+    const sel = document.getElementById("list-page-size");
+    const n = parseInt(sel?.value, 10);
+    listPageSize = LIST_PAGE_SIZES.includes(n) ? n : 20;
+    listPage = 0;
+    filterListPeserta(false);
+}
+
+function goToListPage(page) {
+    const source = getFilteredParticipants();
+    const totalPages = Math.max(1, Math.ceil(source.length / listPageSize));
+    const p = Math.max(0, Math.min(page, totalPages - 1));
+    if (p === listPage) return;
+    listPage = p;
+    filterListPeserta(false);
+}
+
+function listPageNav(delta) {
+    goToListPage(listPage + delta);
+}
+
+function renderPageNumbers(container, totalPages, current) {
+    if (!container) return;
+    if (totalPages <= 1) {
+        container.innerHTML = "";
+        return;
+    }
+
+    const pages = new Set();
+    pages.add(0);
+    pages.add(totalPages - 1);
+    for (let i = current - 2; i <= current + 2; i++) {
+        if (i >= 0 && i < totalPages) pages.add(i);
+    }
+    const sorted = [...pages].sort((a, b) => a - b);
+
+    let html = `<button class="btn btn-sm btn-outline-black page-num" onclick="goToListPage(${current - 1})"
+        ${current <= 0 ? "disabled" : ""} aria-label="Sebelumnya">&laquo;</button>`;
+
+    let prev = -1;
+    for (const p of sorted) {
+        if (prev !== -1 && p - prev > 1) {
+            html += `<span class="page-ellipsis">&hellip;</span>`;
+        }
+        html += `<button class="btn btn-sm page-num ${p === current ? "active" : ""}"
+            onclick="goToListPage(${p})">${p + 1}</button>`;
+        prev = p;
+    }
+
+    html += `<button class="btn btn-sm btn-outline-black page-num" onclick="goToListPage(${current + 1})"
+        ${current >= totalPages - 1 ? "disabled" : ""} aria-label="Berikutnya">&raquo;</button>`;
+
+    container.innerHTML = html;
+}
+
 function toggleListSort(key) {
     if (listSortKey === key) {
         listSortDir = listSortDir === "asc" ? "desc" : "asc";
@@ -450,45 +519,24 @@ function toggleListSort(key) {
     filterListPeserta();
 }
 
-function listPageNav(delta) {
-    const keyword = document.getElementById("filter-list")?.value.trim().toLowerCase() || "";
-    const source = keyword
-        ? allParticipantsData.filter(row => {
-            const fields = [
-                row.order_number, row.nama_lengkap_ibu, row.nama_lengkap_ayah,
-                row.nama_anak, row.nomor_wa, row.email, row.item_name,
-                row.paket, row.order_status, row.usia_bayi
-            ];
-            return fields.some(f => String(f || "").toLowerCase().includes(keyword));
-        })
-        : allParticipantsData;
-    const totalPages = Math.max(1, Math.ceil(source.length / LIST_PAGE_SIZE));
-    const next = listPage + delta;
-    if (next < 0 || next >= totalPages) return;
-    listPage = next;
-    filterListPeserta(false);
-}
-
 function renderListPeserta(data) {
     const tbody = document.getElementById("alldata-body");
     const countEl = document.getElementById("list-count");
     const sorted = sortParticipantRows(data);
     const total = sorted.length;
-    const totalPages = Math.max(1, Math.ceil(total / LIST_PAGE_SIZE));
+    const totalPages = Math.max(1, Math.ceil(total / listPageSize));
     if (listPage >= totalPages) listPage = totalPages - 1;
     if (listPage < 0) listPage = 0;
-    const start = listPage * LIST_PAGE_SIZE;
-    const pageRows = sorted.slice(start, start + LIST_PAGE_SIZE);
+    const start = listPage * listPageSize;
+    const pageRows = sorted.slice(start, start + listPageSize);
 
-    const prevBtn = document.getElementById("list-prev");
-    const nextBtn = document.getElementById("list-next");
+    const pageNav = document.getElementById("list-pagination");
     const pageLabel = document.getElementById("list-page-label");
 
     if (total === 0) {
         tbody.innerHTML = `<tr><td colspan="${LIST_COLS}" class="text-center py-3">Data tidak ditemukan.</td></tr>`;
         countEl.textContent = "";
-        if (prevBtn) prevBtn.disabled = true;
-        if (nextBtn) nextBtn.disabled = true;
+        if (pageNav) pageNav.innerHTML = "";
         if (pageLabel) pageLabel.textContent = "";
         return;
     }
@@ -520,8 +568,7 @@ function renderListPeserta(data) {
     const to = Math.min(start + pageRows.length, total);
     countEl.textContent = `Menampilkan ${from}-${to} dari ${total} peserta`;
     if (pageLabel) pageLabel.textContent = `Hal. ${listPage + 1}/${totalPages}`;
-    if (prevBtn) prevBtn.disabled = listPage <= 0;
-    if (nextBtn) nextBtn.disabled = listPage >= totalPages - 1;
+    renderPageNumbers(pageNav, totalPages, listPage);
 }
 
 function filterListPeserta(resetPage = true) {
@@ -589,12 +636,12 @@ function resetAppUI() {
     if (listBody) listBody.innerHTML = "";
     const listCount = document.getElementById("list-count");
     if (listCount) listCount.textContent = "";
-    const listPrev = document.getElementById("list-prev");
-    if (listPrev) listPrev.disabled = true;
-    const listNext = document.getElementById("list-next");
-    if (listNext) listNext.disabled = true;
+    const listPagination = document.getElementById("list-pagination");
+    if (listPagination) listPagination.innerHTML = "";
     const listPageLabel = document.getElementById("list-page-label");
     if (listPageLabel) listPageLabel.textContent = "";
+    const listPageSizeSel = document.getElementById("list-page-size");
+    if (listPageSizeSel) listPageSizeSel.value = String(listPageSize);
 
     // Backoffice (admin)
     adminSectionLoaded = {};

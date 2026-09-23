@@ -202,6 +202,7 @@ body {
 }
 
 .table-custom tbody tr {
+
     transition: background-color 0.15s ease;
 }
 
@@ -336,4 +337,36 @@ body {
     font-weight: 700;
     color: var(--ngg-black);
     line-height: 1.2;
+}
+
+/* List Peserta pagination */
+.pagination-nav .page-num {
+    min-width: 32px;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.8rem;
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    background: var(--ngg-white);
+    color: var(--ngg-black);
+    border-radius: 6px;
+}
+
+.pagination-nav .page-num:hover:not(:disabled):not(.active) {
+    background: rgba(0, 0, 0, 0.06);
+}
+
+.pagination-nav .page-num.active {
+    background: var(--ngg-black);
+    border-color: var(--ngg-black);
+    color: var(--ngg-white);
+}
+
+.pagination-nav .page-num:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.pagination-nav .page-ellipsis {
+    font-size: 0.8rem;
+    opacity: 0.5;
+    padding: 0 2px;
 }
