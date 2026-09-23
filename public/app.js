@@ -318,9 +318,11 @@ async function refreshCurrentView() {
 let allParticipantsData = [];
 
 const LIST_COLS = 13;
+const LIST_PAGE_SIZE = 25;
 
 let listSortKey = "order_number";
 let listSortDir = "asc";
+let listPage = 0;
 
 function statusBadge(status, doneValue) {
     const ok = String(status || "").trim().toLowerCase() === doneValue;
@@ -350,9 +352,11 @@ async function loadAllParticipants() {
 
         if (res.data && res.data.length > 0) {
             allParticipantsData = res.data;
+            listPage = 0;
             renderListPeserta(res.data);
         } else {
             allParticipantsData = [];
+            listPage = 0;
             tbody.innerHTML = `<tr><td colspan="${LIST_COLS}" class="text-center py-3">Tidak ada data.</td></tr>`;
             document.getElementById("list-count").textContent = "";
         }
@@ -441,23 +445,56 @@ function toggleListSort(key) {
         listSortKey = key;
         listSortDir = "asc";
     }
+    listPage = 0;
     updateListSortIndicators();
     filterListPeserta();
+}
+
+function listPageNav(delta) {
+    const keyword = document.getElementById("filter-list")?.value.trim().toLowerCase() || "";
+    const source = keyword
+        ? allParticipantsData.filter(row => {
+            const fields = [
+                row.order_number, row.nama_lengkap_ibu, row.nama_lengkap_ayah,
+                row.nama_anak, row.nomor_wa, row.email, row.item_name,
+                row.paket, row.order_status, row.usia_bayi
+            ];
+            return fields.some(f => String(f || "").toLowerCase().includes(keyword));
+        })
+        : allParticipantsData;
+    const totalPages = Math.max(1, Math.ceil(source.length / LIST_PAGE_SIZE));
+    const next = listPage + delta;
+    if (next < 0 || next >= totalPages) return;
+    listPage = next;
+    filterListPeserta(false);
 }
 
 function renderListPeserta(data) {
     const tbody = document.getElementById("alldata-body");
     const countEl = document.getElementById("list-count");
     const sorted = sortParticipantRows(data);
+    const total = sorted.length;
+    const totalPages = Math.max(1, Math.ceil(total / LIST_PAGE_SIZE));
+    if (listPage >= totalPages) listPage = totalPages - 1;
+    if (listPage < 0) listPage = 0;
+    const start = listPage * LIST_PAGE_SIZE;
+    const pageRows = sorted.slice(start, start + LIST_PAGE_SIZE);
 
-    if (sorted.length === 0) {
+    const prevBtn = document.getElementById("list-prev");
+    const nextBtn = document.getElementById("list-next");
+    const pageLabel = document.getElementById("list-page-label");
+
+    if (total === 0) {
         tbody.innerHTML = `<tr><td colspan="${LIST_COLS}" class="text-center py-3">Data tidak ditemukan.</td></tr>`;
         countEl.textContent = "";
+        if (prevBtn) prevBtn.disabled = true;
+        if (nextBtn) nextBtn.disabled = true;
+        if (pageLabel) pageLabel.textContent = "";
         return;
     }
 
     tbody.innerHTML = "";
-    sorted.forEach(row => {
+    pageRows.forEach(row => {
         const rp = statusBadgeWithTime(row.status_diambil, "sudah", row.waktu_diambil);
         const hd = statusBadgeWithTime(row.status_hadir, "hadir", row.waktu_hadir);
 
@@ -479,11 +516,17 @@ function renderListPeserta(data) {
         tbody.appendChild(tr);
     });
 
-    countEl.textContent = `Menampilkan ${sorted.length} dari ${allParticipantsData.length} peserta`;
+    const from = total === 0 ? 0 : start + 1;
+    const to = Math.min(start + pageRows.length, total);
+    countEl.textContent = `Menampilkan ${from}-${to} dari ${total} peserta`;
+    if (pageLabel) pageLabel.textContent = `Hal. ${listPage + 1}/${totalPages}`;
+    if (prevBtn) prevBtn.disabled = listPage <= 0;
+    if (nextBtn) nextBtn.disabled = listPage >= totalPages - 1;
 }
 
-function filterListPeserta() {
+function filterListPeserta(resetPage = true) {
     const keyword = document.getElementById("filter-list").value.trim().toLowerCase();
+    if (resetPage) listPage = 0;
     if (!keyword) {
         renderListPeserta(allParticipantsData);
         return;
@@ -538,6 +581,7 @@ function resetAppUI() {
     allParticipantsData = [];
     listSortKey = "order_number";
     listSortDir = "asc";
+    listPage = 0;
     updateListSortIndicators();
     const filterList = document.getElementById("filter-list");
     if (filterList) filterList.value = "";
@@ -545,6 +589,12 @@ function resetAppUI() {
     if (listBody) listBody.innerHTML = "";
     const listCount = document.getElementById("list-count");
     if (listCount) listCount.textContent = "";
+    const listPrev = document.getElementById("list-prev");
+    if (listPrev) listPrev.disabled = true;
+    const listNext = document.getElementById("list-next");
+    if (listNext) listNext.disabled = true;
+    const listPageLabel = document.getElementById("list-page-label");
+    if (listPageLabel) listPageLabel.textContent = "";
 
     // Backoffice (admin)
     adminSectionLoaded = {};

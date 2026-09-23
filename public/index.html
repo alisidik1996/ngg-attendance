@@ -281,7 +281,17 @@
                                     </table>
                                 </div>
 
-                                <div id="list-count" class="text-end mt-2" style="font-size: 0.8rem; opacity: 0.6;">
+                                <div class="d-flex justify-content-between align-items-center mt-2 gap-2 flex-wrap">
+                                    <span id="list-count" style="font-size: 0.8rem; opacity: 0.6;"></span>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span id="list-page-label" style="font-size: 0.8rem; opacity: 0.6;"></span>
+                                        <div class="btn-group btn-group-sm">
+                                            <button id="list-prev" class="btn btn-outline-black"
+                                                onclick="listPageNav(-1)" disabled>Sebelumnya</button>
+                                            <button id="list-next" class="btn btn-outline-black"
+                                                onclick="listPageNav(1)" disabled>Berikutnya</button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
