@@ -66,3 +66,8 @@ def search_participants_endpoint(keyword: str = Query(..., min_length=1),
 @router.get("/stats")
 def get_statistics_endpoint(user: dict = Depends(require_staff)):
     return RegistrationService.getStatistics()
+
+
+@router.post("/sync")
+def sync_from_sheets_endpoint(request: Request, user: dict = Depends(require_staff)):
+    return RegistrationService.syncFromSheets(actor=_actor(request, user))

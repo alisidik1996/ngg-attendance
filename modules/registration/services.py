@@ -167,3 +167,30 @@ class RegistrationService:
             "status": "success",
             "statistics": stats
         }
+
+    @staticmethod
+    def syncFromSheets(actor: dict = None):
+        actor = actor or {}
+        try:
+            total = db.sync_from_gsheets()
+        except Exception as e:
+            logger.error("Manual GSheets sync failed: %s", e)
+            raise HTTPException(
+                status_code=502,
+                detail=f"Gagal sync dari Google Sheets: {e}",
+            )
+        db.insert_audit_log(
+            actor.get("id"),
+            actor.get("username", ""),
+            "gsheets_sync",
+            "sheet",
+            "",
+            f"total={total}",
+            actor.get("ip", ""),
+            actor.get("user_agent", ""),
+        )
+        return {
+            "status": "success",
+            "message": "Sync dari Google Sheets selesai",
+            "total_peserta": total,
+        }

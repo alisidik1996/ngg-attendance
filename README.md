@@ -192,6 +192,7 @@ Semua endpoint di bawah (kecuali `/`, `/health`, `/docs`, `POST /api/auth/login`
 | `GET` | `/api/registration/participants` | staff | Get all participants |
 | `GET` | `/api/registration/search?keyword=...` | staff | Search participants |
 | `GET` | `/api/registration/stats` | staff | Get statistics |
+| `POST` | `/api/registration/sync` | staff | **Manual sync** tarik data terbaru dari Google Sheets (merge); toast hasil + refresh stats/list |
 | `GET` | `/api/admin/users` | admin | List akun |
 | `POST` | `/api/admin/users` | admin | Buat akun `{username, password, role}` |
 | `PATCH` | `/api/admin/users/{id}` | admin | Update password/role/is_active (tidak bisa nonaktifkan/demote diri sendiri) |

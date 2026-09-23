@@ -359,6 +359,33 @@ async function loadAllParticipants() {
     }
 }
 
+async function syncFromSheet() {
+    const btn = document.getElementById("btn-sync-sheet");
+    if (!btn || btn.disabled) return;
+    const icon = '<i class="bi bi-arrow-repeat"></i>';
+    btn.disabled = true;
+    btn.classList.add("btn-loading");
+    btn.innerHTML = `${icon} Sync...`;
+    try {
+        const res = await fetchJson(`${API_BASE_URL}/api/registration/sync`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+        });
+        showToast(res.message || `Sync selesai: ${res.total_peserta} peserta`);
+        void fetchStats();
+        const listPane = document.getElementById("tab-list");
+        if (listPane && listPane.classList.contains("active")) {
+            void loadAllParticipants();
+        }
+    } catch (e) {
+        showToast(e.message || "Gagal sync dari Google Sheets");
+    } finally {
+        btn.disabled = false;
+        btn.classList.remove("btn-loading");
+        btn.innerHTML = `${icon} Sync Sheet`;
+    }
+}
+
 function renderListPeserta(data) {
     const tbody = document.getElementById("alldata-body");
     const countEl = document.getElementById("list-count");

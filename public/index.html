@@ -52,6 +52,10 @@
                 <span class="navbar-brand mb-0 h5 m-0" style="font-weight: 500;"><i class="bi bi-person-bounding-box"
                         style="color:#0066cc;"></i> NGG Attendance</span>
                 <div class="d-flex flex-column flex-md-row gap-2 align-items-md-center ms-md-auto">
+                    <button id="btn-sync-sheet" class="btn btn-sm btn-outline-black" type="button"
+                        onclick="syncFromSheet()" title="Tarik data terbaru dari Google Sheets">
+                        <i class="bi bi-arrow-repeat"></i> Sync Sheet
+                    </button>
                     <span id="live-stats" class="badge p-2"
                         style="font-weight:normal; background: rgba(0,0,0,0.6); color: white;">Memuat
                         statistik...</span>

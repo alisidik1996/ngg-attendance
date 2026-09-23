@@ -176,3 +176,42 @@ def test_client_meta_uses_x_forwarded_for(client, admin_user, monkeypatch):
         headers={"X-Forwarded-For": "203.0.113.9"},
     )
     assert seen.get("ip") == "203.0.113.9"
+
+
+def test_sync_requires_auth(client):
+    resp = client.post("/api/registration/sync")
+    assert resp.status_code == 401
+
+
+def test_sync_staff_allowed(client, staff_user, monkeypatch):
+    from core import sqlite_db
+
+    monkeypatch.setattr(sqlite_db, "sync_from_gsheets", lambda: 42)
+    login(client, staff_user)
+    resp = client.post("/api/registration/sync")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "success"
+    assert body["total_peserta"] == 42
+
+
+def test_sync_admin_allowed(client, admin_user, monkeypatch):
+    from core import sqlite_db
+
+    monkeypatch.setattr(sqlite_db, "sync_from_gsheets", lambda: 7)
+    login(client, admin_user)
+    resp = client.post("/api/registration/sync")
+    assert resp.status_code == 200
+    assert resp.json()["total_peserta"] == 7
+
+
+def test_sync_failure_returns_502(client, staff_user, monkeypatch):
+    from core import sqlite_db
+
+    def _fail():
+        raise RuntimeError("sheet offline")
+
+    monkeypatch.setattr(sqlite_db, "sync_from_gsheets", _fail)
+    login(client, staff_user)
+    resp = client.post("/api/registration/sync")
+    assert resp.status_code == 502

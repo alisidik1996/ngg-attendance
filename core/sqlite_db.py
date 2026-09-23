@@ -144,7 +144,7 @@ def insert_audit_log(actor_id, actor_username, action, entity="", entity_id="", 
         conn.close()
 
 
-def sync_from_gsheets():
+def sync_from_gsheets() -> int:
     from core.database import gsheetConnection
 
     logger.info("Syncing data from Google Sheets to SQLite (merge)...")
@@ -152,7 +152,7 @@ def sync_from_gsheets():
     data = sheet.get_all_records()
     if not data:
         logger.warning("Google Sheets returned 0 records, skipping sync.")
-        return
+        return count_participants()
 
     conn = get_db()
     try:
@@ -213,6 +213,7 @@ def sync_from_gsheets():
         if skipped:
             logger.warning(f"Skipped {skipped} sheet row(s) with empty order_number.")
         logger.info(f"Sync complete: {count} participants in SQLite.")
+        return count
     finally:
         conn.close()
 
