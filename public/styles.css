@@ -171,6 +171,26 @@ body {
     z-index: 1;
 }
 
+.table-custom thead th.sortable {
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.table-custom thead th.sortable:hover {
+    background-color: #222;
+}
+
+.table-custom thead th.sortable .sort-icon {
+    opacity: 0.35;
+    font-size: 0.72rem;
+    margin-left: 2px;
+}
+
+.table-custom thead th.sortable.sorted .sort-icon {
+    opacity: 1;
+}
+
 .table-custom tbody td {
     border-color: rgba(0, 0, 0, 0.08);
     font-size: 0.85rem;

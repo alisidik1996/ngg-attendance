@@ -230,19 +230,46 @@
                                     <table class="table table-custom align-middle mb-0">
                                         <thead>
                                             <tr>
-                                                <th class="text-nowrap">No. Order</th>
-                                                <th class="text-nowrap">Nama Ibu</th>
-                                                <th class="text-nowrap">Nama Ayah</th>
-                                                <th class="text-nowrap">Nama Anak</th>
-                                                <th class="text-nowrap">Usia</th>
-                                                <th class="text-nowrap">No. WA</th>
-                                                <th class="text-nowrap">Email</th>
-                                                <th class="text-nowrap">Paket / Item</th>
-                                                <th class="text-nowrap">Uk. Kaos Ibu</th>
-                                                <th class="text-nowrap">Uk. Kaos Ayah</th>
-                                                <th class="text-nowrap">Status Order</th>
-                                                <th class="text-nowrap">Race Pack</th>
-                                                <th class="text-nowrap">Kehadiran</th>
+                                                <th class="text-nowrap sortable" data-key="order_number"
+                                                    onclick="toggleListSort('order_number')"
+                                                    title="Klik untuk urutkan No. Order">No. Order <i
+                                                        class="sort-icon bi"></i></th>
+                                                <th class="text-nowrap sortable" data-key="nama_lengkap_ibu"
+                                                    onclick="toggleListSort('nama_lengkap_ibu')">Nama Ibu <i
+                                                        class="sort-icon bi"></i></th>
+                                                <th class="text-nowrap sortable" data-key="nama_lengkap_ayah"
+                                                    onclick="toggleListSort('nama_lengkap_ayah')">Nama Ayah <i
+                                                        class="sort-icon bi"></i></th>
+                                                <th class="text-nowrap sortable" data-key="nama_anak"
+                                                    onclick="toggleListSort('nama_anak')">Nama Anak <i
+                                                        class="sort-icon bi"></i></th>
+                                                <th class="text-nowrap sortable" data-key="usia_bayi"
+                                                    onclick="toggleListSort('usia_bayi')">Usia <i
+                                                        class="sort-icon bi"></i></th>
+                                                <th class="text-nowrap sortable" data-key="nomor_wa"
+                                                    onclick="toggleListSort('nomor_wa')">No. WA <i
+                                                        class="sort-icon bi"></i></th>
+                                                <th class="text-nowrap sortable" data-key="email"
+                                                    onclick="toggleListSort('email')">Email <i
+                                                        class="sort-icon bi"></i></th>
+                                                <th class="text-nowrap sortable" data-key="item_name"
+                                                    onclick="toggleListSort('item_name')">Paket / Item <i
+                                                        class="sort-icon bi"></i></th>
+                                                <th class="text-nowrap sortable" data-key="uk_kaos_ibu"
+                                                    onclick="toggleListSort('uk_kaos_ibu')">Uk. Kaos Ibu <i
+                                                        class="sort-icon bi"></i></th>
+                                                <th class="text-nowrap sortable" data-key="uk_kaos_ayah"
+                                                    onclick="toggleListSort('uk_kaos_ayah')">Uk. Kaos Ayah <i
+                                                        class="sort-icon bi"></i></th>
+                                                <th class="text-nowrap sortable" data-key="order_status"
+                                                    onclick="toggleListSort('order_status')">Status Order <i
+                                                        class="sort-icon bi"></i></th>
+                                                <th class="text-nowrap sortable" data-key="status_diambil"
+                                                    onclick="toggleListSort('status_diambil')">Race Pack <i
+                                                        class="sort-icon bi"></i></th>
+                                                <th class="text-nowrap sortable" data-key="status_hadir"
+                                                    onclick="toggleListSort('status_hadir')">Kehadiran <i
+                                                        class="sort-icon bi"></i></th>
                                             </tr>
                                         </thead>
                                         <tbody id="alldata-body">

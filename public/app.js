@@ -20,7 +20,10 @@ document.getElementById("search_keyword").addEventListener("keypress", function 
     if (e.key === "Enter") searchParticipant();
 });
 
-window.addEventListener("load", bootApp);
+window.addEventListener("load", () => {
+    updateListSortIndicators();
+    bootApp();
+});
 
 function showToast(message) {
     const toastEl = document.getElementById('liveToast');
@@ -316,6 +319,9 @@ let allParticipantsData = [];
 
 const LIST_COLS = 13;
 
+let listSortKey = "order_number";
+let listSortDir = "asc";
+
 function statusBadge(status, doneValue) {
     const ok = String(status || "").trim().toLowerCase() === doneValue;
     return ok
@@ -386,18 +392,72 @@ async function syncFromSheet() {
     }
 }
 
+function getSortValue(row, key) {
+    if (key === "item_name") return row.item_name || row.paket || "";
+    return row[key] ?? "";
+}
+
+function sortParticipantRows(rows) {
+    const dir = listSortDir === "desc" ? -1 : 1;
+    const key = listSortKey;
+    return [...rows].sort((a, b) => {
+        let av = getSortValue(a, key);
+        let bv = getSortValue(b, key);
+        if (key === "order_number") {
+            const an = Number(av);
+            const bn = Number(bv);
+            if (!Number.isNaN(an) && !Number.isNaN(bn) && String(av).trim() !== "" && String(bv).trim() !== "") {
+                return (an - bn) * dir;
+            }
+        }
+        av = String(av).toLowerCase();
+        bv = String(bv).toLowerCase();
+        if (av < bv) return -1 * dir;
+        if (av > bv) return 1 * dir;
+        return 0;
+    });
+}
+
+function updateListSortIndicators() {
+    document.querySelectorAll("#tab-list thead th.sortable").forEach(th => {
+        const icon = th.querySelector(".sort-icon");
+        if (!icon) return;
+        if (th.dataset.key === listSortKey) {
+            icon.className = `sort-icon bi ${listSortDir === "asc" ? "bi-sort-up" : "bi-sort-down"}`;
+            th.classList.add("sorted");
+            th.setAttribute("aria-sort", listSortDir === "asc" ? "ascending" : "descending");
+        } else {
+            icon.className = "sort-icon bi bi-arrow-down-up";
+            th.classList.remove("sorted");
+            th.removeAttribute("aria-sort");
+        }
+    });
+}
+
+function toggleListSort(key) {
+    if (listSortKey === key) {
+        listSortDir = listSortDir === "asc" ? "desc" : "asc";
+    } else {
+        listSortKey = key;
+        listSortDir = "asc";
+    }
+    updateListSortIndicators();
+    filterListPeserta();
+}
+
 function renderListPeserta(data) {
     const tbody = document.getElementById("alldata-body");
     const countEl = document.getElementById("list-count");
+    const sorted = sortParticipantRows(data);
 
-    if (data.length === 0) {
+    if (sorted.length === 0) {
         tbody.innerHTML = `<tr><td colspan="${LIST_COLS}" class="text-center py-3">Data tidak ditemukan.</td></tr>`;
         countEl.textContent = "";
         return;
     }
 
     tbody.innerHTML = "";
-    data.forEach(row => {
+    sorted.forEach(row => {
         const rp = statusBadgeWithTime(row.status_diambil, "sudah", row.waktu_diambil);
         const hd = statusBadgeWithTime(row.status_hadir, "hadir", row.waktu_hadir);
 
@@ -419,7 +479,7 @@ function renderListPeserta(data) {
         tbody.appendChild(tr);
     });
 
-    countEl.textContent = `Menampilkan ${data.length} dari ${allParticipantsData.length} peserta`;
+    countEl.textContent = `Menampilkan ${sorted.length} dari ${allParticipantsData.length} peserta`;
 }
 
 function filterListPeserta() {
@@ -476,6 +536,9 @@ function resetAppUI() {
 
     // List peserta
     allParticipantsData = [];
+    listSortKey = "order_number";
+    listSortDir = "asc";
+    updateListSortIndicators();
     const filterList = document.getElementById("filter-list");
     if (filterList) filterList.value = "";
     const listBody = document.getElementById("alldata-body");
@@ -758,7 +821,7 @@ async function saveUser() {
         errEl.classList.remove("d-none");
         return;
     }
-    if ((isCreate || password) && (!password || password.length < 6)) {
+    if ((isCreate || password) && (!password || password.length < 8)) {
         errEl.textContent = "Password min. 6 karakter.";
         errEl.classList.remove("d-none");
         return;
